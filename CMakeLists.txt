@@ -20,6 +20,8 @@ project (x264)
 option(HIGH_BIT_DEPTH "Store pixels as 16bit values" OFF)
 option(X264_BUILD_CLI "Build standalone application" ON)
 option(X264_HAVE_GPL "Allow linkage with GPL libraries, disable if commercial licensee" ON)
+option(X264_HAVE_AVS "Allow Avisynth" ON)
+option(X264_HAVE_FFMS "Allow FFMS" OFF)
 
 # Compiler verification
 if(NOT MSVC12)
@@ -48,7 +50,6 @@ file(WRITE config.h
     "#define HAVE_POSIXTHREAD 0\n"
     "#define HAVE_SWSCALE 0\n"
     "#define HAVE_LAVF 0\n"
-    "#define HAVE_FFMS 0\n"
     "#define HAVE_GPAC 0\n"
     "#define HAVE_CPU_COUNT 0\n"
     "#define HAVE_THP 0\n"
@@ -148,9 +149,20 @@ file(GLOB CommonFiles
     common/vlc.c
     common/deblock.c
     common/mvpred.c)
-    
-# common\pixel.c(497): warning C4003: not enough actual parameters for macro 'SATD_X_DECL7', 'SATD_X_DECL6', 'INIT_ADS'
-add_definitions("/wd4003")
+
+if (X264_HAVE_AVS)
+    file(APPEND config.h    "#define HAVE_AVS 1\n")
+    list(APPEND InputFiles input/avs.c)
+endif(X264_HAVE_AVS)
+
+if (X264_HAVE_FFMS)
+    file(APPEND config.h    "#define HAVE_FFMS 1\n")
+    list(APPEND InputFiles input/ffms.c)
+    set(FFMPEG_INCLUDE_DIRS "ffmpeg/include"    CACHE PATH "Path to directory with ffmpeg include files")
+    set(FFMPEG_LIBS_DIRS    "ffmpeg/libs"       CACHE PATH "Path to directory with ffmpeg static .lib files")
+    set(FFMS2_INCLUDE_DIRS  "ffms2/include"     CACHE PATH "Path to directory with FFmpegSource2 include files")
+    set(FFMS2_LIBS_DIRS     "ffms2/x64/"        CACHE PATH "Path to directory with FFmpegSource2 static .lib files")
+endif(X264_HAVE_FFMS)
 
 set(ASM_SRCS cabac-a.asm const-a.asm cpu-a.asm pixel-a.asm
     dct-a.asm deblock-a.asm mc-a.asm mc-a2.asm bitstream-a.asm
@@ -212,10 +224,11 @@ if(YASM_EXECUTABLE)
     endif()
 endif()
 
-add_definitions(/wd4018) # >= signed/unsigned mismatch
-add_definitions(/wd4244) # 'initializing' : conversion from 'float' to 'int', possible loss of data
-add_definitions(/wd4305) # 'function' : truncation from 'double' to 'float'
-add_definitions(/wd4996) # disable suggestions for ISO C APIs, allow POSIX function names
+add_definitions("/wd4003") # common\pixel.c(497): warning C4003: not enough actual parameters for macro 'SATD_X_DECL7', 'SATD_X_DECL6', 'INIT_ADS'
+add_definitions("/wd4018") # >= signed/unsigned mismatch
+add_definitions("/wd4244") # 'initializing' : conversion from 'float' to 'int', possible loss of data
+add_definitions("/wd4305") # 'function' : truncation from 'double' to 'float'
+add_definitions("/wd4996") # disable suggestions for ISO C APIs, allow POSIX function names
 add_definitions(-D_CRT_SECURE_NO_WARNINGS) # disable suggestions for proprietary secure APIs
 
 include_directories(.)
@@ -231,5 +244,15 @@ if(X264_BUILD_CLI)
     include_directories(extras/)
     add_executable(x264 ${InputFiles} ${OutputFiles} ${FilterFiles} x264.c extras/getopt.c extras/getopt.h)
     target_link_libraries(x264 libx264)
+    
+    if(X264_HAVE_FFMS)
+        target_include_directories(x264 PRIVATE ${FFMS2_INCLUDE_DIRS})
+        target_link_libraries(x264 ${FFMS2_LIBS_DIRS}/ffms2.lib)
+        
+        target_include_directories(x264 PRIVATE ${FFMPEG_INCLUDE_DIRS})
+        file(GLOB FFMS_FOUND_LIBS ${FFMPEG_LIBS_DIRS}/*.lib)
+        target_link_libraries(x264 ${FFMS_FOUND_LIBS})
+    endif(X264_HAVE_FFMS)
+    
 endif()
 # vim: syntax=cmake:expandtab
