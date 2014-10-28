@@ -177,6 +177,8 @@ typedef struct x264_frame
 #if HAVE_OPENCL
     x264_frame_opencl_t opencl;
 #endif
+
+    x264_saliency_img_t *p_img_saliency;
 } x264_frame_t;
 
 /* synchronized frame list */

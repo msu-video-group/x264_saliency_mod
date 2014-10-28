@@ -147,6 +147,8 @@ static x264_frame_t *x264_frame_new( x264_t *h, int b_fdec )
 
     frame->orig = frame;
 
+    frame->p_img_saliency = NULL;
+
     if( i_csp == X264_CSP_NV12 || i_csp == X264_CSP_NV16 )
     {
         int chroma_padv = i_padv >> (i_csp == X264_CSP_NV12);
@@ -333,6 +335,12 @@ void x264_frame_delete( x264_frame_t *frame )
 #if HAVE_OPENCL
         x264_opencl_frame_delete( frame );
 #endif
+        if ( frame->p_img_saliency )
+        {
+            if ( frame->p_img_saliency->plane )
+                free( frame->p_img_saliency->plane );
+            free( frame->p_img_saliency );
+        }
     }
     x264_free( frame );
 }

@@ -48,8 +48,7 @@ file(WRITE config.h
     "#define HAVE_NEON 0\n"
     "#define HAVE_BEOSTHREAD 0\n"
     "#define HAVE_POSIXTHREAD 0\n"
-    "#define HAVE_SWSCALE 0\n"
-    "#define HAVE_LAVF 0\n"
+    #"#define HAVE_LAVF 0\n"
     "#define HAVE_GPAC 0\n"
     "#define HAVE_CPU_COUNT 0\n"
     "#define HAVE_THP 0\n"
@@ -148,7 +147,8 @@ file(GLOB CommonFiles
     common/mc.c common/mc.h
     common/vlc.c
     common/deblock.c
-    common/mvpred.c)
+    common/mvpred.c
+    x264.h)
 
 if (X264_HAVE_AVS)
     file(APPEND config.h    "#define HAVE_AVS 1\n")
@@ -157,11 +157,18 @@ endif(X264_HAVE_AVS)
 
 if (X264_HAVE_FFMS)
     file(APPEND config.h    "#define HAVE_FFMS 1\n")
-    list(APPEND InputFiles input/ffms.c)
+    list(APPEND InputFiles  input/ffms.c)
+    
+    #As we link ffmpeg libraries, we link libav libs also
+    file(APPEND config.h    "#define HAVE_SWSCALE 1\n")
+    file(APPEND config.h    "#define HAVE_LAVF 1\n")
+    list(APPEND InputFiles  input/lavf.c)
+    
     set(FFMPEG_INCLUDE_DIRS "ffmpeg/include"    CACHE PATH "Path to directory with ffmpeg include files")
     set(FFMPEG_LIBS_DIRS    "ffmpeg/libs"       CACHE PATH "Path to directory with ffmpeg static .lib files")
     set(FFMS2_INCLUDE_DIRS  "ffms2/include"     CACHE PATH "Path to directory with FFmpegSource2 include files")
     set(FFMS2_LIBS_DIRS     "ffms2/x64/"        CACHE PATH "Path to directory with FFmpegSource2 static .lib files")
+    
 endif(X264_HAVE_FFMS)
 
 set(ASM_SRCS cabac-a.asm const-a.asm cpu-a.asm pixel-a.asm

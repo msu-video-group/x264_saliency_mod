@@ -3178,7 +3178,8 @@ int x264_encoder_invalidate_reference( x264_t *h, int64_t pts )
 int     x264_encoder_encode( x264_t *h,
                              x264_nal_t **pp_nal, int *pi_nal,
                              x264_picture_t *pic_in,
-                             x264_picture_t *pic_out )
+                             x264_picture_t *pic_out,
+                             x264_saliency_img_t *p_img_saliency )
 {
     x264_t *thread_current, *thread_prev, *thread_oldest;
     int i_nal_type, i_nal_ref_idc, i_global_qp;
@@ -3220,6 +3221,12 @@ int     x264_encoder_encode( x264_t *h,
 
         if( x264_frame_copy_picture( h, fenc, pic_in ) < 0 )
             return -1;
+
+        /* Put saliency image to fenc */
+        if ( h->param.rc.i_saliency_mode && p_img_saliency )
+        {
+            fenc->p_img_saliency = p_img_saliency;
+        }
 
         if( h->param.i_width != 16 * h->mb.i_mb_width ||
             h->param.i_height != 16 * h->mb.i_mb_height )
@@ -4302,6 +4309,8 @@ void    x264_encoder_close  ( x264_t *h )
         free( h->param.rc.psz_stat_out );
     if( h->param.rc.psz_stat_in )
         free( h->param.rc.psz_stat_in );
+    if ( h->param.rc.psz_saliency_source )
+        free( h->param.rc.psz_saliency_source );
 
     x264_cqm_delete( h );
     x264_free( h->nal_buffer );

@@ -432,6 +432,10 @@ typedef struct x264_param_t
         x264_zone_t *zones;         /* ratecontrol overrides */
         int         i_zones;        /* number of zone_t's */
         char        *psz_zones;     /* alternate method of specifying zones */
+
+        /* saliency mod params */
+        int         i_saliency_mode;
+        char        *psz_saliency_source;
     } rc;
 
     /* Cropping Rectangle parameters: added to those implicitly defined by
@@ -728,6 +732,14 @@ typedef struct
     uint8_t *plane[4];   /* Pointers to each plane */
 } x264_image_t;
 
+typedef struct 
+{
+    int i_stride;
+    int i_width;
+    int i_height;
+    uint8_t *plane;
+} x264_saliency_img_t;
+
 typedef struct
 {
     /* All arrays of data here are ordered as follows:
@@ -895,7 +907,7 @@ int     x264_encoder_headers( x264_t *, x264_nal_t **pp_nal, int *pi_nal );
  *      returns the number of bytes in the returned NALs.
  *      returns negative on error and zero if no NAL units returned.
  *      the payloads of all output NALs are guaranteed to be sequential in memory. */
-int     x264_encoder_encode( x264_t *, x264_nal_t **pp_nal, int *pi_nal, x264_picture_t *pic_in, x264_picture_t *pic_out );
+int     x264_encoder_encode( x264_t *, x264_nal_t **pp_nal, int *pi_nal, x264_picture_t *pic_in, x264_picture_t *pic_out, x264_saliency_img_t *p_img_saliency );
 /* x264_encoder_close:
  *      close an encoder handler */
 void    x264_encoder_close  ( x264_t * );

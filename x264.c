@@ -1132,6 +1132,8 @@ static struct option long_options[] =
     { "input-range", required_argument, NULL, OPT_INPUT_RANGE },
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
+    { "saliency",    required_argument, NULL, 9 },
+    { "saliency-force",    no_argument, NULL, 9 },
     {0, 0, 0, 0}
 };
 
@@ -1175,8 +1177,12 @@ static int select_output( const char *muxer, char *filename, x264_param_t *param
 }
 
 static int select_input( const char *demuxer, char *used_demuxer, char *filename,
-                         hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt )
+                         hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt,
+                         cli_input_t *p_cli_input)
 {
+    if (!p_cli_input)
+        p_cli_input = &cli_input;
+
     int b_auto = !strcasecmp( demuxer, "auto" );
     const char *ext = b_auto ? get_filename_extension( filename ) : "";
     int b_regular = strcmp( filename, "-" );
@@ -1197,7 +1203,7 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
     if( !strcasecmp( module, "avs" ) || !strcasecmp( ext, "d2v" ) || !strcasecmp( ext, "dga" ) )
     {
 #if HAVE_AVS
-        cli_input = avs_input;
+        *p_cli_input = avs_input;
         module = "avs";
 #else
         x264_cli_log( "x264", X264_LOG_ERROR, "not compiled with AVS input support\n" );
@@ -1205,9 +1211,9 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
 #endif
     }
     else if( !strcasecmp( module, "y4m" ) )
-        cli_input = y4m_input;
+        *p_cli_input = y4m_input;
     else if( !strcasecmp( module, "raw" ) || !strcasecmp( ext, "yuv" ) )
-        cli_input = raw_input;
+        *p_cli_input = raw_input;
     else
     {
 #if HAVE_FFMS
@@ -1216,7 +1222,7 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
         {
             module = "ffms";
             b_auto = 0;
-            cli_input = ffms_input;
+            *p_cli_input = ffms_input;
         }
 #endif
 #if HAVE_LAVF
@@ -1225,7 +1231,7 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
         {
             module = "lavf";
             b_auto = 0;
-            cli_input = lavf_input;
+            *p_cli_input = lavf_input;
         }
 #endif
 #if HAVE_AVS
@@ -1234,19 +1240,20 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
         {
             module = "avs";
             b_auto = 0;
-            cli_input = avs_input;
+            *p_cli_input = avs_input;
         }
 #endif
         if( b_auto && !raw_input.open_file( filename, p_handle, info, opt ) )
         {
             module = "raw";
             b_auto = 0;
-            cli_input = raw_input;
+            *p_cli_input = raw_input;
         }
 
         FAIL_IF_ERROR( !(*p_handle), "could not open input file `%s' via any method!\n", filename )
     }
-    strcpy( used_demuxer, module );
+    if ( used_demuxer )
+        strcpy( used_demuxer, module );
 
     return 0;
 }
@@ -1593,7 +1600,7 @@ generic_option:
     input_opt.progress = opt->b_progress;
     input_opt.output_csp = output_csp;
 
-    if( select_input( demuxer, demuxername, input_filename, &opt->hin, &info, &input_opt ) )
+    if( select_input( demuxer, demuxername, input_filename, &opt->hin, &info, &input_opt, NULL ) )
         return -1;
 
     FAIL_IF_ERROR( !opt->hin && cli_input.open_file( input_filename, &opt->hin, &info, &input_opt ),
@@ -1669,6 +1676,8 @@ generic_option:
     }
     if( input_opt.input_range != RANGE_AUTO )
         info.fullrange = input_opt.input_range;
+
+    FAIL_IF_ERROR( param->rc.i_saliency_mode && vid_filters && strlen(vid_filters), "video filters aren't supported in saliency mode\n" );
 
     if( init_vid_filters( vid_filters, &opt->hin, &info, param, output_csp ) )
         return -1;
@@ -1766,14 +1775,14 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
     }
 }
 
-static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts )
+static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts, x264_saliency_img_t *img_saliency )
 {
     x264_picture_t pic_out;
     x264_nal_t *nal;
     int i_nal;
     int i_frame_size = 0;
 
-    i_frame_size = x264_encoder_encode( h, &nal, &i_nal, pic, &pic_out );
+    i_frame_size = x264_encoder_encode( h, &nal, &i_nal, pic, &pic_out, img_saliency );
 
     FAIL_IF_ERROR( i_frame_size < 0, "x264_encoder_encode failed\n" );
 
@@ -1821,6 +1830,17 @@ static void convert_cli_to_lib_pic( x264_picture_t *lib, cli_pic_t *cli )
     lib->img.i_plane = cli->img.planes;
     lib->img.i_csp = cli->img.csp;
     lib->i_pts = cli->pts;
+}
+
+static void copy_cli_pic_to_saliency_img( cli_pic_t *src, x264_saliency_img_t *dst )
+{
+    //copy only first plane
+    dst->i_height   = src->img.height;
+    dst->i_width    = src->img.width;
+    dst->i_stride   = src->img.stride[0];
+    int plane_size  = src->img.height * src->img.stride[0];
+    dst->plane      = calloc( plane_size, sizeof(uint8_t) );
+    memcpy( dst->plane, src->img.plane[0], plane_size * sizeof(uint8_t) );
 }
 
 #define FAIL_IF_ERROR2( cond, ... )\
@@ -1896,6 +1916,33 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     if( opt->tcfile_out )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
+    /* Saliency routines */
+    hnd_t hnd_saliency = NULL;
+    cli_pic_t cli_pic_saliency;
+    cli_input_t saliency_input;
+    x264_saliency_img_t *p_img_saliency = NULL;
+
+    if ( param->rc.i_saliency_mode )
+    {
+        video_info_t vi_saliency;
+        cli_input_opt_t opt_saliency;
+
+        memset( &opt_saliency, 0, sizeof(opt_saliency) );
+        memset( &vi_saliency, 0, sizeof(vi_saliency) );
+        opt_saliency.progress = 1;
+        char *saliency_open_error = "can't open saliency source\n";
+
+        FAIL_IF_ERROR( select_input( demuxer_names[0], NULL, param->rc.psz_saliency_source,
+                                     &hnd_saliency, &vi_saliency, &opt_saliency, &saliency_input ),
+                        saliency_open_error);
+
+        FAIL_IF_ERROR( !hnd_saliency && saliency_input.open_file(param->rc.psz_saliency_source, &hnd_saliency, &vi_saliency, &opt_saliency) ,
+                       saliency_open_error);
+
+        if ( saliency_input.picture_alloc(&cli_pic_saliency, vi_saliency.csp, vi_saliency.width, vi_saliency.height) )
+            return -1;
+    }
+
     /* Encode frames */
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
@@ -1903,6 +1950,15 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             break;
         x264_picture_init( &pic );
         convert_cli_to_lib_pic( &pic, &cli_pic );
+
+        if ( param->rc.i_saliency_mode )
+        {
+            if ( saliency_input.read_frame( &cli_pic_saliency, hnd_saliency, i_frame + opt->i_seek ) )
+                break;
+
+            p_img_saliency = malloc( sizeof(x264_saliency_img_t) );
+            copy_cli_pic_to_saliency_img( &cli_pic_saliency, p_img_saliency );
+        }
 
         if( !param->b_vfr_input )
             pic.i_pts = i_frame;
@@ -1936,7 +1992,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             parse_qpfile( opt, &pic, i_frame + opt->i_seek );
 
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts );
+        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, p_img_saliency );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */
@@ -1953,6 +2009,9 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         if( filter.release_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
 
+        if ( saliency_input.release_frame && saliency_input.release_frame( &cli_pic_saliency, hnd_saliency ) )
+            break;
+
         /* update status line (up to 1000 times per input file) */
         if( opt->b_progress && i_frame_output )
             i_previous = print_status( i_start, i_previous, i_frame_output, param->i_frame_total, i_file, param, 2 * last_dts - prev_dts - first_dts );
@@ -1961,7 +2020,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts );
+        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts, p_img_saliency );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */
