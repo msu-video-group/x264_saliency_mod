@@ -337,8 +337,7 @@ void x264_frame_delete( x264_frame_t *frame )
 #endif
         if ( frame->p_img_saliency )
         {
-            if ( frame->p_img_saliency->plane )
-                free( frame->p_img_saliency->plane );
+            delete_saliency_img( frame->p_img_saliency );
             free( frame->p_img_saliency );
         }
     }
@@ -879,4 +878,19 @@ x264_frame_t *x264_sync_frame_list_pop( x264_sync_frame_list_t *slist )
     x264_pthread_cond_broadcast( &slist->cv_empty );
     x264_pthread_mutex_unlock( &slist->mutex );
     return frame;
+}
+
+void copy_saliency_img(x264_saliency_img_t *src, x264_saliency_img_t *dst)
+{
+    assert( src != dst );
+    memcpy( dst, src, sizeof(x264_saliency_img_t) );
+    dst->plane = x264_malloc( src->i_height * src->i_stride );
+    memcpy( dst->plane, src->plane, src->i_height * src->i_stride );
+}
+
+void delete_saliency_img(x264_saliency_img_t *img)
+{
+    if ( img->plane )
+        x264_free( img->plane );
+    memset( img, 0, sizeof(x264_saliency_img_t) );
 }

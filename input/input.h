@@ -87,6 +87,7 @@ typedef struct
 
 typedef struct
 {
+    char *name;
     int (*open_file)( char *psz_filename, hnd_t *p_handle, video_info_t *info, cli_input_opt_t *opt );
     int (*picture_alloc)( cli_pic_t *pic, int csp, int width, int height );
     int (*read_frame)( cli_pic_t *pic, hnd_t handle, int i_frame );

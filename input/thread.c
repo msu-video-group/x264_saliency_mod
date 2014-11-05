@@ -126,4 +126,4 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-cli_input_t thread_input = { open_file, NULL, read_frame, release_frame, NULL, close_file };
+cli_input_t thread_input = { "thread", open_file, NULL, read_frame, release_frame, NULL, close_file };

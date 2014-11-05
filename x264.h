@@ -732,7 +732,7 @@ typedef struct
     uint8_t *plane[4];   /* Pointers to each plane */
 } x264_image_t;
 
-typedef struct 
+typedef struct
 {
     int i_stride;
     int i_width;

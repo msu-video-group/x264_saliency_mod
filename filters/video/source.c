@@ -33,18 +33,25 @@ typedef struct
     cli_pic_t pic;
     hnd_t hin;
     int cur_frame;
+    cli_input_t *cli_input;
 } source_hnd_t;
 
 cli_vid_filter_t source_filter;
 
-static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info, x264_param_t *param, char *opt_string )
+static int init( hnd_t *handle, cli_vid_filter_t *filter, video_info_t *info, x264_param_t *param, char *opt_source )
 {
     source_hnd_t *h = calloc( 1, sizeof(source_hnd_t) );
     if( !h )
         return -1;
     h->cur_frame = -1;
 
-    if( cli_input.picture_alloc( &h->pic, info->csp, info->width, info->height ) )
+    /* select default cli_input or custom */
+    if ( !opt_source )
+        h->cli_input = &cli_input;
+    else
+        h->cli_input = (cli_input_t *) opt_source;
+
+    if( h->cli_input->picture_alloc( &h->pic, info->csp, info->width, info->height ) )
         return -1;
 
     h->hin = *handle;
@@ -58,7 +65,7 @@ static int get_frame( hnd_t handle, cli_pic_t *output, int frame )
 {
     source_hnd_t *h = handle;
     /* do not allow requesting of frames from before the current position */
-    if( frame <= h->cur_frame || cli_input.read_frame( &h->pic, h->hin, frame ) )
+    if( frame <= h->cur_frame || h->cli_input->read_frame( &h->pic, h->hin, frame ) )
         return -1;
     h->cur_frame = frame;
     *output = h->pic;
@@ -68,7 +75,7 @@ static int get_frame( hnd_t handle, cli_pic_t *output, int frame )
 static int release_frame( hnd_t handle, cli_pic_t *pic, int frame )
 {
     source_hnd_t *h = handle;
-    if( cli_input.release_frame && cli_input.release_frame( &h->pic, h->hin ) )
+    if( h->cli_input->release_frame && h->cli_input->release_frame( &h->pic, h->hin ) )
         return -1;
     return 0;
 }
@@ -76,8 +83,8 @@ static int release_frame( hnd_t handle, cli_pic_t *pic, int frame )
 static void free_filter( hnd_t handle )
 {
     source_hnd_t *h = handle;
-    cli_input.picture_clean( &h->pic );
-    cli_input.close_file( h->hin );
+    h->cli_input->picture_clean( &h->pic );
+    h->cli_input->close_file( h->hin );
     free( h );
 }
 

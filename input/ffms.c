@@ -222,4 +222,4 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-const cli_input_t ffms_input = { open_file, picture_alloc, read_frame, NULL, picture_clean, close_file };
+const cli_input_t ffms_input = { "ffms", open_file, picture_alloc, read_frame, NULL, picture_clean, close_file };

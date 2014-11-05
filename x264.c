@@ -156,14 +156,17 @@ typedef struct {
     FILE *tcfile_out;
     double timebase_convert_multiplier;
     int i_pulldown;
+    hnd_t hin_saliency;
 } cli_opt_t;
 
 /* file i/o operation structs */
 cli_input_t cli_input;
+static cli_input_t saliency_input;
 static cli_output_t cli_output;
 
 /* video filter operation struct */
 static cli_vid_filter_t filter;
+static cli_vid_filter_t saliency_filter;
 
 static const char * const demuxer_names[] =
 {
@@ -1258,6 +1261,31 @@ static int select_input( const char *demuxer, char *used_demuxer, char *filename
     return 0;
 }
 
+static int apply_vid_filter_sequence(char *sequence, hnd_t *handle, video_info_t *info, x264_param_t *param)
+{
+    sequence = strdup(sequence);
+
+    /* parse filter chain */
+    for (char *p = sequence; p && *p;)
+    {
+        int tok_len = strcspn(p, "/");
+        int p_len = strlen(p);
+        p[tok_len] = 0;
+        int name_len = strcspn(p, ":");
+        p[name_len] = 0;
+        name_len += name_len != tok_len;
+        if (x264_init_vid_filter(p, handle, &filter, info, param, p + name_len))
+        {
+            free( sequence );
+            return -1;
+        }
+        p += X264_MIN(tok_len + 1, p_len);
+    }
+
+    free( sequence );
+    return 0;
+}
+
 static int init_vid_filters( char *sequence, hnd_t *handle, video_info_t *info, x264_param_t *param, int output_csp )
 {
     x264_register_vid_filters();
@@ -1270,19 +1298,8 @@ static int init_vid_filters( char *sequence, hnd_t *handle, video_info_t *info, 
     if( x264_init_vid_filter( "fix_vfr_pts", handle, &filter, info, param, NULL ) ) /* fix vfr pts */
         return -1;
 
-    /* parse filter chain */
-    for( char *p = sequence; p && *p; )
-    {
-        int tok_len = strcspn( p, "/" );
-        int p_len = strlen( p );
-        p[tok_len] = 0;
-        int name_len = strcspn( p, ":" );
-        p[name_len] = 0;
-        name_len += name_len != tok_len;
-        if( x264_init_vid_filter( p, handle, &filter, info, param, p + name_len ) )
-            return -1;
-        p += X264_MIN( tok_len+1, p_len );
-    }
+    if ( apply_vid_filter_sequence( sequence, handle, info, param ) )
+        return -1;
 
     /* force end result resolution */
     if( !param->i_width && !param->i_height )
@@ -1314,6 +1331,54 @@ static int init_vid_filters( char *sequence, hnd_t *handle, video_info_t *info, 
 
     if( x264_init_vid_filter( "depth", handle, &filter, info, param, args ) )
         return -1;
+
+    return 0;
+}
+
+static int init_vid_saliency_filters( char *sequence, hnd_t *handle, video_info_t *info, x264_param_t *main_param )
+{
+    int dst_w = (main_param->i_width + 15) / 16;
+    int dst_h = (main_param->i_height + 15) / 16;
+    int b_resize_required = (dst_w != info->width || dst_h != info->height);
+    int b_have_full_size = (info->width == main_param->i_width && info->height == main_param->i_height);
+    
+    FAIL_IF_ERROR( b_resize_required && !b_have_full_size, "saliency have incorrect size" );
+
+    /* force saliency param be equal to main_param except width, height and csp */
+    x264_param_t saliency_param;
+    memcpy( &saliency_param, main_param, sizeof(x264_param_t) );
+    saliency_param.i_width = info->width;
+    saliency_param.i_height = info->height;
+
+    x264_register_vid_filters();
+
+    /* intialize baseline filters */
+    if ( x264_init_vid_filter( "source", handle, &saliency_filter, info, NULL, (char *) &saliency_input ) ) /* wrap demuxer into a filter */
+        return -1;
+    if ( x264_init_vid_filter( "resize", handle, &saliency_filter, info, NULL, "normcsp" ) ) /* normalize csps to be of a known/supported format */
+        return -1;
+    if ( x264_init_vid_filter( "fix_vfr_pts", handle, &saliency_filter, info, NULL, NULL ) ) /* fix vfr pts */
+        return -1;
+
+    FAIL_IF_ERROR( !b_resize_required && sequence && sequence[0], "fullsize saliency to apply custom filters is required" );
+    if ( apply_vid_filter_sequence( sequence, handle, info, &saliency_param ) )
+        return -1;
+
+    char resize_args[80];
+    resize_args[0] = '\0';
+
+    if ( b_resize_required )
+        sprintf( resize_args, "width=%d,height=%d,method=area,", dst_w, dst_h);
+    strcat(resize_args, "csp=yv12");
+
+    saliency_param.i_width = dst_w;
+    saliency_param.i_height = dst_h;
+    if ( x264_init_vid_filter( "resize", handle, &saliency_filter, info, &saliency_param, resize_args ) )
+        return -1;
+
+    //saliency_param.i_csp = X264_CSP_YV12;
+    //if ( x264_init_vid_filter( "depth", handle, &filter, info, &saliency_param, "bit_depth=8" ) )
+    //    return -1;
 
     return 0;
 }
@@ -1606,6 +1671,25 @@ generic_option:
     FAIL_IF_ERROR( !opt->hin && cli_input.open_file( input_filename, &opt->hin, &info, &input_opt ),
                    "could not open input file `%s'\n", input_filename )
 
+    /* Saliency routines */
+    video_info_t vi_saliency;
+    cli_input_opt_t opt_saliency;
+
+    if ( param->rc.i_saliency_mode )
+    {
+        memset( &opt_saliency, 0, sizeof(opt_saliency) );
+        memset( &vi_saliency, 0, sizeof(vi_saliency) );
+        opt_saliency.progress = 1;
+        char *saliency_open_error = "can't open saliency source\n";
+
+        FAIL_IF_ERROR( select_input(demuxer_names[0], NULL, param->rc.psz_saliency_source,
+                                    &opt->hin_saliency, &vi_saliency, &opt_saliency, &saliency_input),
+                       saliency_open_error);
+
+        FAIL_IF_ERROR( !opt->hin_saliency && saliency_input.open_file(param->rc.psz_saliency_source, &opt->hin_saliency, &vi_saliency, &opt_saliency),
+                       saliency_open_error);
+    }
+
     x264_reduce_fraction( &info.sar_width, &info.sar_height );
     x264_reduce_fraction( &info.fps_num, &info.fps_den );
     x264_cli_log( demuxername, X264_LOG_INFO, "%dx%d%c %u:%u @ %u/%u fps (%cfr)\n", info.width,
@@ -1677,10 +1761,16 @@ generic_option:
     if( input_opt.input_range != RANGE_AUTO )
         info.fullrange = input_opt.input_range;
 
-    FAIL_IF_ERROR( param->rc.i_saliency_mode && vid_filters && strlen(vid_filters), "video filters aren't supported in saliency mode\n" );
-
     if( init_vid_filters( vid_filters, &opt->hin, &info, param, output_csp ) )
         return -1;
+
+    if ( param->rc.i_saliency_mode )
+    {
+        //FAIL_IF_ERROR( vid_filters && strlen(vid_filters), "video filters aren't supported in saliency mode\n" );
+
+        if ( init_vid_saliency_filters( vid_filters, &opt->hin_saliency, &vi_saliency, param ) )
+            return -1;
+    }
 
     /* set param flags from the post-filtered video */
     param->b_vfr_input = info.vfr;
@@ -1832,15 +1922,13 @@ static void convert_cli_to_lib_pic( x264_picture_t *lib, cli_pic_t *cli )
     lib->i_pts = cli->pts;
 }
 
-static void copy_cli_pic_to_saliency_img( cli_pic_t *src, x264_saliency_img_t *dst )
+static void convert_cli_pic_to_saliency_img( cli_pic_t *src, x264_saliency_img_t *dst )
 {
     //copy only first plane
     dst->i_height   = src->img.height;
     dst->i_width    = src->img.width;
     dst->i_stride   = src->img.stride[0];
-    int plane_size  = src->img.height * src->img.stride[0];
-    dst->plane      = calloc( plane_size, sizeof(uint8_t) );
-    memcpy( dst->plane, src->img.plane[0], plane_size * sizeof(uint8_t) );
+    dst->plane      = src->img.plane[0];
 }
 
 #define FAIL_IF_ERROR2( cond, ... )\
@@ -1915,33 +2003,9 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
     if( opt->tcfile_out )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
-
-    /* Saliency routines */
-    hnd_t hnd_saliency = NULL;
+    
     cli_pic_t cli_pic_saliency;
-    cli_input_t saliency_input;
-    x264_saliency_img_t *p_img_saliency = NULL;
-
-    if ( param->rc.i_saliency_mode )
-    {
-        video_info_t vi_saliency;
-        cli_input_opt_t opt_saliency;
-
-        memset( &opt_saliency, 0, sizeof(opt_saliency) );
-        memset( &vi_saliency, 0, sizeof(vi_saliency) );
-        opt_saliency.progress = 1;
-        char *saliency_open_error = "can't open saliency source\n";
-
-        FAIL_IF_ERROR( select_input( demuxer_names[0], NULL, param->rc.psz_saliency_source,
-                                     &hnd_saliency, &vi_saliency, &opt_saliency, &saliency_input ),
-                        saliency_open_error);
-
-        FAIL_IF_ERROR( !hnd_saliency && saliency_input.open_file(param->rc.psz_saliency_source, &hnd_saliency, &vi_saliency, &opt_saliency) ,
-                       saliency_open_error);
-
-        if ( saliency_input.picture_alloc(&cli_pic_saliency, vi_saliency.csp, vi_saliency.width, vi_saliency.height) )
-            return -1;
-    }
+    x264_saliency_img_t img_saliency;
 
     /* Encode frames */
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
@@ -1953,11 +2017,10 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
         if ( param->rc.i_saliency_mode )
         {
-            if ( saliency_input.read_frame( &cli_pic_saliency, hnd_saliency, i_frame + opt->i_seek ) )
-                break;
+            if ( saliency_filter.get_frame( opt->hin_saliency, &cli_pic_saliency, i_frame + opt->i_seek ) )
+                return -1;
 
-            p_img_saliency = malloc( sizeof(x264_saliency_img_t) );
-            copy_cli_pic_to_saliency_img( &cli_pic_saliency, p_img_saliency );
+            convert_cli_pic_to_saliency_img( &cli_pic_saliency, &img_saliency );
         }
 
         if( !param->b_vfr_input )
@@ -1992,7 +2055,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             parse_qpfile( opt, &pic, i_frame + opt->i_seek );
 
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, p_img_saliency );
+        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, &img_saliency );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */
@@ -2009,7 +2072,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         if( filter.release_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
 
-        if ( saliency_input.release_frame && saliency_input.release_frame( &cli_pic_saliency, hnd_saliency ) )
+        if ( saliency_filter.release_frame( opt->hin_saliency, &cli_pic_saliency, i_frame + opt->i_seek ) )
             break;
 
         /* update status line (up to 1000 times per input file) */
@@ -2020,7 +2083,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts, p_img_saliency );
+        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts, &img_saliency );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */

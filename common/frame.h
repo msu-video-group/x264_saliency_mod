@@ -32,6 +32,9 @@
 #define PADH 32
 #define PADV 32
 
+void copy_saliency_img( x264_saliency_img_t *src, x264_saliency_img_t *dst );
+void delete_saliency_img( x264_saliency_img_t *img );
+
 typedef struct x264_frame
 {
     /* */

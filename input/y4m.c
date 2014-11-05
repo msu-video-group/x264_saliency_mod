@@ -297,4 +297,4 @@ static int close_file( hnd_t handle )
     return 0;
 }
 
-const cli_input_t y4m_input = { open_file, x264_cli_pic_alloc, read_frame, NULL, x264_cli_pic_clean, close_file };
+const cli_input_t y4m_input = { "y4m", open_file, x264_cli_pic_alloc, read_frame, NULL, x264_cli_pic_clean, close_file };
