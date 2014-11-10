@@ -3231,6 +3231,8 @@ int     x264_encoder_encode( x264_t *h,
                 fenc->p_img_saliency = malloc( sizeof(x264_picture_t) );
 
             copy_saliency_img( p_img_saliency, fenc->p_img_saliency );
+            saliency_img_compute_mean( fenc->p_img_saliency );
+            //x264_log( h, X264_LOG_INFO, "saliency mean = %f\n", fenc->p_img_saliency->f_mean );
         }
 
         if( h->param.i_width != 16 * h->mb.i_mb_width ||

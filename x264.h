@@ -738,6 +738,9 @@ typedef struct
     int i_width;
     int i_height;
     uint8_t *plane;
+
+    float f_mean;
+    float f_stddev;
 } x264_saliency_img_t;
 
 typedef struct

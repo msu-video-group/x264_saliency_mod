@@ -153,4 +153,6 @@ float x264_pixel_ssim_wxh  ( x264_pixel_function_t *pf, pixel *pix1, intptr_t i_
                              int i_width, int i_height, void *buf, int *cnt );
 int x264_field_vsad( x264_t *h, int mb_x, int mb_y );
 
+float x264_mean_8u( uint8_t *src, int stride, int i_width, int i_height );
+
 #endif

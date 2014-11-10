@@ -894,3 +894,8 @@ void delete_saliency_img(x264_saliency_img_t *img)
         x264_free( img->plane );
     memset( img, 0, sizeof(x264_saliency_img_t) );
 }
+
+void saliency_img_compute_mean(x264_saliency_img_t *img)
+{
+    img->f_mean = x264_mean_8u( img->plane, img->i_stride, img->i_width, img->i_height );
+}

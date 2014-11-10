@@ -3041,14 +3041,16 @@ void x264_macroblock_analyse( x264_t *h )
     if( h->param.rc.i_aq_mode && h->param.analyse.i_subpel_refine < 10 )
         h->mb.i_qp = abs(h->mb.i_qp - h->mb.i_last_qp) == 1 ? h->mb.i_last_qp : h->mb.i_qp;
     
-    if (h->param.rc.i_saliency_mode && h->fenc->p_img_saliency)
+    if ( h->param.rc.i_saliency_mode && h->fenc->p_img_saliency )
     {
         x264_saliency_img_t *img_saliency = h->fenc->p_img_saliency;
         uint8_t *plane_saliency = img_saliency->plane;
-        int stride_saliency = img_saliency->i_stride;
-        int saliency_val = plane_saliency[h->mb.i_mb_y * stride_saliency + h->mb.i_mb_x];
+        int saliency_val = plane_saliency[h->mb.i_mb_y * img_saliency->i_stride + h->mb.i_mb_x];
         
-        h->mb.i_qp = h->param.rc.i_qp_min + saliency_val * (h->param.rc.i_qp_max - h->param.rc.i_qp_min) / 255;
+        int new_qp = h->mb.i_qp - ( 50.0f / 255.0f ) * ( (float)saliency_val - img_saliency->f_mean );
+        h->mb.i_qp = x264_clip3( new_qp, h->param.rc.i_qp_min, h->param.rc.i_qp_max );
+        
+        //h->mb.i_qp = h->param.rc.i_qp_min + saliency_val * ( h->param.rc.i_qp_max - h->param.rc.i_qp_min ) / 255;
     }
 
     if( h->param.analyse.b_mb_info )
