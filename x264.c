@@ -2072,7 +2072,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         if( filter.release_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
 
-        if ( saliency_filter.release_frame( opt->hin_saliency, &cli_pic_saliency, i_frame + opt->i_seek ) )
+        if (  param->rc.i_saliency_mode && saliency_filter.release_frame( opt->hin_saliency, &cli_pic_saliency, i_frame + opt->i_seek ) )
             break;
 
         /* update status line (up to 1000 times per input file) */
