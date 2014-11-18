@@ -1135,8 +1135,10 @@ static struct option long_options[] =
     { "input-range", required_argument, NULL, OPT_INPUT_RANGE },
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
-    { "saliency",    required_argument, NULL, 9 },
-    { "saliency-force",    no_argument, NULL, 9 },
+    { "saliency",    required_argument, NULL, 0 },
+    { "saliency-fun",required_argument, NULL, 0 }, //unused
+	{ "dump-qp-raw", required_argument, NULL, 0 },
+	{ "dump-qp-proc",required_argument, NULL, 0 },
     {0, 0, 0, 0}
 };
 

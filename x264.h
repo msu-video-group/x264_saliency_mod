@@ -436,7 +436,11 @@ typedef struct x264_param_t
         /* saliency mod params */
         int         i_saliency_mode;
         char        *psz_saliency_source;
+		char		*psz_saliency_dll_func;
     } rc;
+
+	char *psz_dump_qp_raw_dir;
+	char *psz_dump_qp_proc_dir;
 
     /* Cropping Rectangle parameters: added to those implicitly defined by
        non-mod16 video resolutions. */

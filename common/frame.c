@@ -148,6 +148,8 @@ static x264_frame_t *x264_frame_new( x264_t *h, int b_fdec )
     frame->orig = frame;
 
     frame->p_img_saliency = NULL;
+	frame->p_img_qp_raw = NULL;
+	frame->p_img_qp_proc = NULL;
 
     if( i_csp == X264_CSP_NV12 || i_csp == X264_CSP_NV16 )
     {
@@ -337,9 +339,19 @@ void x264_frame_delete( x264_frame_t *frame )
 #endif
         if ( frame->p_img_saliency )
         {
-            delete_saliency_img( frame->p_img_saliency );
+            saliency_img_delete( frame->p_img_saliency );
             free( frame->p_img_saliency );
         }
+		if ( frame->p_img_qp_raw )
+		{
+			saliency_img_delete( frame->p_img_qp_raw );
+			free( frame->p_img_qp_raw );
+		}
+		if ( frame->p_img_qp_proc )
+		{
+			saliency_img_delete( frame->p_img_qp_proc );
+			free( frame->p_img_qp_proc );
+		}
     }
     x264_free( frame );
 }
@@ -880,7 +892,7 @@ x264_frame_t *x264_sync_frame_list_pop( x264_sync_frame_list_t *slist )
     return frame;
 }
 
-void copy_saliency_img(x264_saliency_img_t *src, x264_saliency_img_t *dst)
+void saliency_img_copy( x264_saliency_img_t *src, x264_saliency_img_t *dst )
 {
     assert( src != dst );
     memcpy( dst, src, sizeof(x264_saliency_img_t) );
@@ -888,14 +900,50 @@ void copy_saliency_img(x264_saliency_img_t *src, x264_saliency_img_t *dst)
     memcpy( dst->plane, src->plane, src->i_height * src->i_stride );
 }
 
-void delete_saliency_img(x264_saliency_img_t *img)
+void saliency_img_delete( x264_saliency_img_t *img )
 {
     if ( img->plane )
         x264_free( img->plane );
     memset( img, 0, sizeof(x264_saliency_img_t) );
 }
 
-void saliency_img_compute_mean(x264_saliency_img_t *img)
+void saliency_img_compute_mean( x264_saliency_img_t *img )
 {
     img->f_mean = x264_mean_8u( img->plane, img->i_stride, img->i_width, img->i_height );
+}
+
+void saliency_img_alloc( x264_saliency_img_t *img, int w, int h )
+{
+	img->i_width = w;
+	img->i_height = h;
+	img->i_stride = w;
+	img->plane = x264_malloc( w*h );
+}
+
+//TODO: make it using libavcodec
+#include <bmpfile.h>
+int saliency_img_dump( x264_saliency_img_t *img, char *path )
+{
+	bmpfile_t *bmp = bmp_create( img->i_width, img->i_height, 24 );
+	rgb_pixel_t pixel;
+	uint8_t *plane = img->plane;
+
+	if ( !bmp || !plane )
+		return -1;
+
+	for (int i = 0; i < img->i_height; i++)
+	{	
+		for (int j = 0; j < img->i_width; j++)
+		{
+			pixel.red = pixel.green = pixel.blue = plane[j];
+			bmp_set_pixel(bmp, j, i, pixel);
+		}
+		plane += img->i_stride;
+	}
+
+	if ( !bmp_save(bmp, path) )
+		return -1;
+
+	bmp_destroy(bmp);
+	return 0;
 }

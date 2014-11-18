@@ -30,7 +30,7 @@ if(NOT MSVC12)
 endif()
 
 add_definitions(/MP) # multithreaded build
-add_definitions(/Oi) # enable SIMD intrinsics
+add_definitions(/Oi) # enable SIMD intrinsics 
 
 add_definitions(-DHAVE_CONFIG_H=1)
 file(WRITE config.h
@@ -154,6 +154,13 @@ file(GLOB CommonFiles
     common/mvpred.c
     x264.h)
 
+
+#TODO: Remove it
+set(LIBBMP_SRC_DIR "libbmp/src/" CACHE PATH "Path to directory with libbmp sources")
+list(APPEND CommonFiles ${LIBBMP_SRC_DIR}/bmpfile.c)
+include_directories(${LIBBMP_SRC_DIR})
+
+
 if (X264_HAVE_AVS)
     file(APPEND config.h    "#define HAVE_AVS 1\n")
     list(APPEND InputFiles input/avs.c)
@@ -269,6 +276,10 @@ if(X264_BUILD_CLI)
         target_include_directories(x264 PRIVATE ${FFMPEG_INCLUDE_DIRS})
         file(GLOB FFMS_FOUND_LIBS ${FFMPEG_LIBS_DIRS}/*.lib)
         target_link_libraries(x264 ${FFMS_FOUND_LIBS})
+        
+        if (NOT X64)
+            target_add_definitions(x264 /SAFESEH:NO) # to avoid errors on linking with ffmpeg libs
+        endif()
     endif(X264_HAVE_FFMS)
     
 endif()

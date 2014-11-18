@@ -181,6 +181,10 @@ void x264_param_default( x264_param_t *param )
 
     param->rc.i_saliency_mode = 0;
     param->rc.psz_saliency_source = NULL;
+	param->rc.psz_saliency_dll_func = NULL;
+
+	param->psz_dump_qp_proc_dir = NULL;
+	param->psz_dump_qp_raw_dir = NULL;
 }
 
 static int x264_param_apply_preset( x264_param_t *param, const char *preset )
@@ -1056,10 +1060,12 @@ int x264_param_parse( x264_param_t *p, const char *name, const char *value )
         p->rc.psz_saliency_source = strdup(value);
         p->rc.i_saliency_mode = 1;
     }
-    OPT("saliency-force")
-    {
-        p->rc.i_saliency_mode = 2;
-    }
+    OPT("saliency-fun")
+		p->rc.psz_saliency_dll_func = strdup(value);
+	OPT("dump-qp-raw")
+		p->psz_dump_qp_raw_dir = strdup(value);
+	OPT("dump-qp-proc")
+		p->psz_dump_qp_proc_dir = strdup(value);
     else
         return X264_PARAM_BAD_NAME;
 #undef OPT

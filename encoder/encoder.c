@@ -76,6 +76,20 @@ static int x264_threadpool_wait_all( x264_t *h )
     return 0;
 }
 
+static void x264_frame_qp_dump(x264_frame_t *frame, x264_saliency_img_t *img, char *path)
+{
+	int max_len = strlen(path) + 10;
+	char *res_path = malloc( max_len );
+	snprintf( res_path, max_len, path, frame->i_frame );
+	
+	if ( saliency_img_dump( img, res_path ) )
+	{
+		x264_cli_log( "x264", X264_LOG_WARNING, "Can't dump \"%s\"\n", res_path );
+	}
+
+	free( res_path );
+}
+
 static void x264_frame_dump( x264_t *h )
 {
     FILE *f = x264_fopen( h->param.psz_dump_yuv, "r+b" );
@@ -3226,14 +3240,27 @@ int     x264_encoder_encode( x264_t *h,
         if ( h->param.rc.i_saliency_mode && p_img_saliency )
         {
             if ( fenc->p_img_saliency )
-                delete_saliency_img( fenc->p_img_saliency );
+                saliency_img_delete( fenc->p_img_saliency );
             else
-                fenc->p_img_saliency = malloc( sizeof(x264_picture_t) );
+                fenc->p_img_saliency = malloc( sizeof(x264_saliency_img_t) );
 
-            copy_saliency_img( p_img_saliency, fenc->p_img_saliency );
+            saliency_img_copy( p_img_saliency, fenc->p_img_saliency );
             saliency_img_compute_mean( fenc->p_img_saliency );
             //x264_log( h, X264_LOG_INFO, "saliency mean = %f\n", fenc->p_img_saliency->f_mean );
+
+			assert( p_img_saliency->i_width == h->mb.i_mb_width && p_img_saliency->i_height == h->mb.i_mb_height );
         }
+
+		if (h->param.psz_dump_qp_proc_dir)
+		{
+			fenc->p_img_qp_proc = malloc(sizeof(x264_saliency_img_t));
+			saliency_img_alloc(fenc->p_img_qp_proc, h->mb.i_mb_width, h->mb.i_mb_height);
+		}
+		if ( h->param.psz_dump_qp_raw_dir )
+		{
+			fenc->p_img_qp_raw = malloc( sizeof(x264_saliency_img_t) );
+			saliency_img_alloc( fenc->p_img_qp_raw, h->mb.i_mb_width, h->mb.i_mb_height );
+		}
 
         if( h->param.i_width != 16 * h->mb.i_mb_width ||
             h->param.i_height != 16 * h->mb.i_mb_height )
@@ -3986,6 +4013,11 @@ static int x264_encoder_frame_end( x264_t *h, x264_t *thread_current,
             h->fref[0][i] = 0;
         }
 
+	if ( h->param.psz_dump_qp_raw_dir )
+		x264_frame_qp_dump( h->fenc, h->fenc->p_img_qp_raw, h->param.psz_dump_qp_raw_dir );
+	if ( h->param.psz_dump_qp_proc_dir )
+		x264_frame_qp_dump( h->fenc, h->fenc->p_img_qp_proc, h->param.psz_dump_qp_proc_dir );
+
     if( h->param.psz_dump_yuv )
         x264_frame_dump( h );
     x264_emms();
@@ -4316,8 +4348,16 @@ void    x264_encoder_close  ( x264_t *h )
         free( h->param.rc.psz_stat_out );
     if( h->param.rc.psz_stat_in )
         free( h->param.rc.psz_stat_in );
-    if ( h->param.rc.psz_saliency_source )
+    
+	if ( h->param.rc.psz_saliency_source )
         free( h->param.rc.psz_saliency_source );
+	if ( h->param.rc.psz_saliency_dll_func )
+		free( h->param.rc.psz_saliency_dll_func );
+
+	if ( h->param.psz_dump_qp_raw_dir )
+		free( h->param.psz_dump_qp_raw_dir );
+	if ( h->param.psz_dump_qp_proc_dir )
+		free( h->param.psz_dump_qp_proc_dir );
 
     x264_cqm_delete( h );
     x264_free( h->nal_buffer );

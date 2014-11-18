@@ -3040,6 +3040,12 @@ void x264_macroblock_analyse( x264_t *h )
      * to lower the bit cost of the qp_delta.  Don't do this if QPRD is enabled. */
     if( h->param.rc.i_aq_mode && h->param.analyse.i_subpel_refine < 10 )
         h->mb.i_qp = abs(h->mb.i_qp - h->mb.i_last_qp) == 1 ? h->mb.i_last_qp : h->mb.i_qp;
+
+	if ( h->param.psz_dump_qp_raw_dir )
+	{
+		x264_saliency_img_t *img = h->fenc->p_img_qp_raw;
+		img->plane[h->mb.i_mb_y * img->i_stride + h->mb.i_mb_x] = x264_clip3( h->mb.i_qp, 0, 255 );
+	}
     
     if ( h->param.rc.i_saliency_mode && h->fenc->p_img_saliency )
     {
@@ -3052,6 +3058,12 @@ void x264_macroblock_analyse( x264_t *h )
         
         //h->mb.i_qp = h->param.rc.i_qp_min + saliency_val * ( h->param.rc.i_qp_max - h->param.rc.i_qp_min ) / 255;
     }
+
+	if ( h->param.psz_dump_qp_proc_dir )
+	{
+		x264_saliency_img_t *img = h->fenc->p_img_qp_proc;
+		img->plane[h->mb.i_mb_y * img->i_stride + h->mb.i_mb_x] = x264_clip3( h->mb.i_qp, 0, 255 );
+	}
 
     if( h->param.analyse.b_mb_info )
         h->fdec->effective_qp[h->mb.i_mb_xy] = h->mb.i_qp; /* Store the real analysis QP. */
