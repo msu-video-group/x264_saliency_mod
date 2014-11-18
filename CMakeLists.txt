@@ -22,6 +22,7 @@ option(X264_BUILD_CLI "Build standalone application" ON)
 option(X264_HAVE_GPL "Allow linkage with GPL libraries, disable if commercial licensee" ON)
 option(X264_HAVE_AVS "Allow Avisynth" ON)
 option(X264_HAVE_FFMS "Allow FFMS" OFF)
+option(X264_HAVE_OPENCL "Allow OpenCL" OFF)
 
 # Compiler verification
 if(NOT MSVC12)
@@ -39,7 +40,6 @@ file(WRITE config.h
     "#define USE_AVXSYNTH 0\n"
     "#define HAVE_VECTOREXT 1\n"
     "#define HAVE_INTERLACED 1\n"
-    "#define HAVE_OPENCL 0\n"
     "#define HAVE_MALLOC_H 0\n"
     "#define HAVE_ALTIVEC 0\n"
     "#define HAVE_ALTIVEC_H 0\n"
@@ -48,7 +48,6 @@ file(WRITE config.h
     "#define HAVE_NEON 0\n"
     "#define HAVE_BEOSTHREAD 0\n"
     "#define HAVE_POSIXTHREAD 0\n"
-    #"#define HAVE_LAVF 0\n"
     "#define HAVE_GPAC 0\n"
     "#define HAVE_CPU_COUNT 0\n"
     "#define HAVE_THP 0\n"
@@ -87,6 +86,11 @@ else(X264_HAVE_GPL)
     file(APPEND x264_config.h "#define X264_HAVE_GPL 0\n")
     file(APPEND config.h      "#define HAVE_GPL 0\n")
 endif(X264_HAVE_GPL)
+if(X264_HAVE_OPENCL)
+    file(APPEND config.h      "#define HAVE_OPENCL 1\n")
+else(X264_HAVE_OPENCL)
+    file(APPEND config.h      "#define HAVE_OPENCL 0\n")
+endif(X264_HAVE_OPENCL)
 
 file(GLOB InputFiles
     input/input.c input/input.h 
@@ -153,6 +157,8 @@ file(GLOB CommonFiles
 if (X264_HAVE_AVS)
     file(APPEND config.h    "#define HAVE_AVS 1\n")
     list(APPEND InputFiles input/avs.c)
+else(X264_HAVE_AVS)
+    file(APPEND config.h    "#define HAVE_AVS 0\n")
 endif(X264_HAVE_AVS)
 
 if (X264_HAVE_FFMS)
@@ -168,7 +174,10 @@ if (X264_HAVE_FFMS)
     set(FFMPEG_LIBS_DIRS    "ffmpeg/libs"       CACHE PATH "Path to directory with ffmpeg static .lib files")
     set(FFMS2_INCLUDE_DIRS  "ffms2/include"     CACHE PATH "Path to directory with FFmpegSource2 include files")
     set(FFMS2_LIBS_DIRS     "ffms2/x64/"        CACHE PATH "Path to directory with FFmpegSource2 static .lib files")
-    
+else(X264_HAVE_FFMS)
+    file(APPEND config.h    "#define HAVE_FFMS 0\n")
+    file(APPEND config.h    "#define HAVE_SWSCALE 0\n")
+    file(APPEND config.h    "#define HAVE_LAVF 0\n")
 endif(X264_HAVE_FFMS)
 
 set(ASM_SRCS cabac-a.asm const-a.asm cpu-a.asm pixel-a.asm
@@ -221,10 +230,11 @@ if(YASM_EXECUTABLE)
         foreach(ASM ${ASM_SRCS})
             set(YASM_SRC ${CMAKE_CURRENT_SOURCE_DIR}/common/x86/${ASM})
             set(YASM_SRCS ${YASM_SRCS} ${YASM_SRC})
-            set(YASM_OBJS ${YASM_OBJS} ${ASM}.obj)
+            set(YASM_OBJ asm/${ASM}.obj)
+            set(YASM_OBJS ${YASM_OBJS} ${YASM_OBJ})
             add_custom_command(
-                OUTPUT ${ASM}.obj
-                COMMAND ${YASM_EXECUTABLE} ARGS ${FLAGS} ${YASM_SRC} -o ${ASM}.obj
+                OUTPUT ${YASM_OBJ}
+                COMMAND ${YASM_EXECUTABLE} ARGS ${FLAGS} ${YASM_SRC} -o ${YASM_OBJ}
                 DEPENDS ${YASM_SRC})
         endforeach()
         source_group(Assembly FILES ${ASM_C} ${YASM_SRCS})
