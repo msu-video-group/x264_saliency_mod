@@ -154,13 +154,6 @@ file(GLOB CommonFiles
     common/mvpred.c
     x264.h)
 
-
-#TODO: Remove it
-set(LIBBMP_SRC_DIR "libbmp/src/" CACHE PATH "Path to directory with libbmp sources")
-list(APPEND CommonFiles ${LIBBMP_SRC_DIR}/bmpfile.c)
-include_directories(${LIBBMP_SRC_DIR})
-
-
 if (X264_HAVE_AVS)
     file(APPEND config.h    "#define HAVE_AVS 1\n")
     list(APPEND InputFiles input/avs.c)

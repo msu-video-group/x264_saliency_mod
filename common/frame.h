@@ -36,7 +36,8 @@ void saliency_img_alloc( x264_saliency_img_t *img, int w, int h );
 void saliency_img_copy( x264_saliency_img_t *src, x264_saliency_img_t *dst );
 void saliency_img_delete( x264_saliency_img_t *img );
 void saliency_img_compute_mean( x264_saliency_img_t *img );
-int saliency_img_dump( x264_saliency_img_t *img, char *path );
+void saliency_img_compute_hist( x264_saliency_img_t *img );
+int (*saliency_img_writer)( x264_saliency_img_t *img, const char *path );// = NULL;
 
 typedef struct x264_frame
 {

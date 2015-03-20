@@ -82,7 +82,7 @@ static void x264_frame_qp_dump(x264_frame_t *frame, x264_saliency_img_t *img, ch
 	char *res_path = malloc( max_len );
 	snprintf( res_path, max_len, path, frame->i_frame );
 	
-	if ( saliency_img_dump( img, res_path ) )
+	if ( saliency_img_writer == NULL || saliency_img_writer( img, res_path ) )
 	{
 		x264_cli_log( "x264", X264_LOG_WARNING, "Can't dump \"%s\"\n", res_path );
 	}

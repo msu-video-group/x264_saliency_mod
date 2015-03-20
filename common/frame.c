@@ -919,31 +919,3 @@ void saliency_img_alloc( x264_saliency_img_t *img, int w, int h )
 	img->i_stride = w;
 	img->plane = x264_malloc( w*h );
 }
-
-//TODO: make it using libavcodec
-#include <bmpfile.h>
-int saliency_img_dump( x264_saliency_img_t *img, char *path )
-{
-	bmpfile_t *bmp = bmp_create( img->i_width, img->i_height, 24 );
-	rgb_pixel_t pixel;
-	uint8_t *plane = img->plane;
-
-	if ( !bmp || !plane )
-		return -1;
-
-	for (int i = 0; i < img->i_height; i++)
-	{	
-		for (int j = 0; j < img->i_width; j++)
-		{
-			pixel.red = pixel.green = pixel.blue = plane[j];
-			bmp_set_pixel(bmp, j, i, pixel);
-		}
-		plane += img->i_stride;
-	}
-
-	if ( !bmp_save(bmp, path) )
-		return -1;
-
-	bmp_destroy(bmp);
-	return 0;
-}

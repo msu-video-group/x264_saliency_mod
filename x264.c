@@ -53,6 +53,7 @@
 #include <libavformat/avformat.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/pixdesc.h>
+#include <libavcodec/avcodec.h>
 #endif
 
 #if HAVE_SWSCALE
@@ -1407,6 +1408,83 @@ static int parse_enum_value( const char *arg, const char * const *names, int *ds
     return -1;
 }
 
+static int libav_saliency_writer( x264_saliency_img_t *img, const char *path )
+{
+#ifdef HAVE_LAVF
+    int got_packet;
+    FILE *fp = NULL;
+    AVCodec *codec = NULL;
+    AVCodecContext *ctx = NULL;
+    AVFrame *frame = NULL;
+    AVPacket pkt;
+
+    avcodec_register_all();
+    av_log_set_level(AV_LOG_INFO);
+        
+    if ( !( fp = fopen(path, "wb") ) )
+        goto fail;
+
+    if ( !( codec = avcodec_find_encoder(AV_CODEC_ID_PNG) ) )
+        goto fail;
+
+    if ( !( ctx = avcodec_alloc_context3(codec) ) )
+        goto fail;
+    
+    ctx->height = img->i_height;
+    ctx->width = img->i_width;
+    ctx->pix_fmt = AV_PIX_FMT_GRAY8;
+
+    if ( avcodec_open2(ctx, codec, NULL) < 0 )
+        goto fail;
+
+    if ( !( frame = av_frame_alloc() ) )
+        goto fail;
+
+    frame->height = ctx->height;
+    frame->width = ctx->width;
+    frame->format = ctx->pix_fmt;
+
+    //TODO: maybe fix this
+    if ( avpicture_fill((AVPicture*) frame, img->plane, frame->format, frame->width, frame->height) < 0 )
+        goto fail;
+
+    got_packet = 0;
+    while ( 1 )
+    {
+        av_init_packet(&pkt);
+        pkt.data = NULL;
+        pkt.size = 0;
+
+        if ( avcodec_encode_video2(ctx, &pkt, (got_packet) ? NULL : frame, &got_packet) < 0 )
+            goto fail;
+
+        if ( !got_packet )
+            break;
+
+        fwrite(pkt.data, pkt.size, 1, fp);
+    }
+    fclose(fp);
+
+    av_free_packet(&pkt);
+    avcodec_close(ctx);
+    avcodec_free_context(&ctx);
+    av_frame_free(&frame);
+
+    return 0;
+fail:
+    if (fp)
+        fclose(fp);
+    if ( ctx )
+    {
+        avcodec_close( ctx );
+        avcodec_free_context( &ctx );
+    }
+    if ( frame )
+        av_frame_free( &frame );
+#endif
+    return 1;
+}
+
 static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
 {
     char *input_filename = NULL;
@@ -1690,6 +1768,11 @@ generic_option:
 
         FAIL_IF_ERROR( !opt->hin_saliency && saliency_input.open_file(param->rc.psz_saliency_source, &opt->hin_saliency, &vi_saliency, &opt_saliency),
                        saliency_open_error);
+
+        if (param->psz_dump_qp_proc_dir || param->psz_dump_qp_raw_dir)
+        {
+            saliency_img_writer = libav_saliency_writer;
+        }
     }
 
     x264_reduce_fraction( &info.sar_width, &info.sar_height );
