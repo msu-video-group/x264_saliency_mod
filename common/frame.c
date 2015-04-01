@@ -892,12 +892,12 @@ x264_frame_t *x264_sync_frame_list_pop( x264_sync_frame_list_t *slist )
     return frame;
 }
 
-void saliency_img_copy( x264_saliency_img_t *src, x264_saliency_img_t *dst )
+void saliency_img_alloc( x264_saliency_img_t *img, int w, int h )
 {
-    assert( src != dst );
-    memcpy( dst, src, sizeof(x264_saliency_img_t) );
-    dst->plane = x264_malloc( src->i_height * src->i_stride );
-    memcpy( dst->plane, src->plane, src->i_height * src->i_stride );
+	img->i_width = w;
+	img->i_height = h;
+	img->i_stride = w;
+	img->plane = x264_malloc( w*h );
 }
 
 void saliency_img_delete( x264_saliency_img_t *img )
@@ -907,15 +907,57 @@ void saliency_img_delete( x264_saliency_img_t *img )
     memset( img, 0, sizeof(x264_saliency_img_t) );
 }
 
-void saliency_img_compute_mean( x264_saliency_img_t *img )
+void saliency_img_copy( x264_saliency_img_t *src, x264_saliency_img_t *dst )
 {
-    img->f_mean = x264_mean_8u( img->plane, img->i_stride, img->i_width, img->i_height );
+    assert( src != dst );
+    memcpy( dst, src, sizeof(x264_saliency_img_t) );
+    dst->plane = x264_malloc( src->i_height * src->i_stride );
+    memcpy( dst->plane, src->plane, src->i_height * src->i_stride );
 }
 
-void saliency_img_alloc( x264_saliency_img_t *img, int w, int h )
+double saliency_img_compute_mean( x264_saliency_img_t *img )
 {
-	img->i_width = w;
-	img->i_height = h;
-	img->i_stride = w;
-	img->plane = x264_malloc( w*h );
+    return x264_mean_8u( img->plane, img->i_stride, img->i_width, img->i_height );
 }
+
+double saliency_img_compute_quantile( x264_saliency_img_t *img, double q )
+{
+    typedef int hist_t[256];
+    hist_t hist;
+    int i, j;
+    int ref_sum, sum;
+    uint8_t *data = img->plane;
+
+    memset( hist, 0, sizeof(hist_t) );
+
+    for (i = 0; i < img->i_height; i++)
+    {
+        for (j = 0; j < img->i_width; j++)
+            hist[data[j]]++;
+
+        data += img->i_stride;
+    }
+
+    ref_sum = q * (img->i_height * img->i_width);
+    sum = hist[0];
+
+    for (i = 0; i < 256 && sum < ref_sum;)
+        sum += hist[++i];
+
+    if (i == 256)
+        return 255;
+
+    if (sum == ref_sum)
+    {
+        for (j = i + 1; j < 256 && hist[j] == 0; j++);
+        j--;
+        return (i + j) * 0.5;
+    }
+
+    if ( i > 0 )
+        return i - 0.5;
+    else
+        return i;
+}
+
+int(*saliency_img_writer)(x264_saliency_img_t *img, const char *path) = NULL;

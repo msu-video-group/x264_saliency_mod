@@ -270,8 +270,8 @@ if(X264_BUILD_CLI)
         file(GLOB FFMS_FOUND_LIBS ${FFMPEG_LIBS_DIRS}/*.lib)
         target_link_libraries(x264 ${FFMS_FOUND_LIBS})
         
-        if (NOT X64)
-            target_add_definitions(x264 /SAFESEH:NO) # to avoid errors on linking with ffmpeg libs
+        if (MSVC AND NOT X64)
+            SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO") # to avoid errors on linking with ffmpeg libs
         endif()
     endif(X264_HAVE_FFMS)
     

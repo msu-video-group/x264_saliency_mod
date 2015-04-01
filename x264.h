@@ -437,6 +437,11 @@ typedef struct x264_param_t
         int         i_saliency_mode;
         char        *psz_saliency_source;
 		char		*psz_saliency_dll_func;
+        double      f_salincy_base_level;
+        double      f_saliency_quantile;
+        double      f_saliency_bitrate_quantile;
+        double      f_saliency_k_up;
+        double      f_saliency_k_down;
     } rc;
 
 	char *psz_dump_qp_raw_dir;
@@ -742,10 +747,9 @@ typedef struct
     int i_width;
     int i_height;
     uint8_t *plane;
-
-    float f_mean;
-    float f_stddev;
 } x264_saliency_img_t;
+
+
 
 typedef struct
 {

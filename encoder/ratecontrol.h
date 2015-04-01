@@ -64,5 +64,8 @@ int x264_weighted_reference_duplicate( x264_t *h, int i_ref, const x264_weight_t
 void x264_threads_distribute_ratecontrol( x264_t *h );
 void x264_threads_merge_ratecontrol( x264_t *h );
 void x264_hrd_fullness( x264_t *h );
+
+void x264_compute_saliency_stats( x264_t *h );
+void x264_saliency_compute_actual_scales( x264_t *h, int s0 );
 #endif
 

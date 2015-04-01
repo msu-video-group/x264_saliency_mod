@@ -32,13 +32,6 @@
 #define PADH 32
 #define PADV 32
 
-void saliency_img_alloc( x264_saliency_img_t *img, int w, int h );
-void saliency_img_copy( x264_saliency_img_t *src, x264_saliency_img_t *dst );
-void saliency_img_delete( x264_saliency_img_t *img );
-void saliency_img_compute_mean( x264_saliency_img_t *img );
-void saliency_img_compute_hist( x264_saliency_img_t *img );
-int (*saliency_img_writer)( x264_saliency_img_t *img, const char *path );// = NULL;
-
 typedef struct x264_frame
 {
     /* */
@@ -269,5 +262,14 @@ int           x264_sync_frame_list_init( x264_sync_frame_list_t *slist, int nele
 void          x264_sync_frame_list_delete( x264_sync_frame_list_t *slist );
 void          x264_sync_frame_list_push( x264_sync_frame_list_t *slist, x264_frame_t *frame );
 x264_frame_t *x264_sync_frame_list_pop( x264_sync_frame_list_t *slist );
+
+void saliency_img_alloc(x264_saliency_img_t *img, int w, int h);
+void saliency_img_copy(x264_saliency_img_t *src, x264_saliency_img_t *dst);
+void saliency_img_delete(x264_saliency_img_t *img);
+
+double saliency_img_compute_mean(x264_saliency_img_t *img);
+double saliency_img_compute_quantile(x264_saliency_img_t *img, double q);
+
+int(*saliency_img_writer)(x264_saliency_img_t *img, const char *path);
 
 #endif

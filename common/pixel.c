@@ -1458,7 +1458,7 @@ void x264_pixel_init( int cpu, x264_pixel_function_t *pixf )
     pixf->ads[PIXEL_4x4] = pixf->ads[PIXEL_8x8];
 }
 
-float x264_mean_8u(uint8_t *src, int stride, int i_width, int i_height)
+double x264_mean_8u(uint8_t *src, int stride, int i_width, int i_height)
 {
     double res = 0;
 
@@ -1472,6 +1472,6 @@ float x264_mean_8u(uint8_t *src, int stride, int i_width, int i_height)
         src += stride;
     }
 
-    return (float) ( res / ( i_width * i_height ) );
+    return res / ( i_width * i_height );
 }
 

@@ -182,6 +182,11 @@ void x264_param_default( x264_param_t *param )
     param->rc.i_saliency_mode = 0;
     param->rc.psz_saliency_source = NULL;
 	param->rc.psz_saliency_dll_func = NULL;
+    param->rc.f_salincy_base_level = -1;
+    param->rc.f_saliency_quantile = -1;
+    param->rc.f_saliency_bitrate_quantile = -1;
+    param->rc.f_saliency_k_up = -1;
+    param->rc.f_saliency_k_down = -1;
 
 	param->psz_dump_qp_proc_dir = NULL;
 	param->psz_dump_qp_raw_dir = NULL;
@@ -1060,6 +1065,50 @@ int x264_param_parse( x264_param_t *p, const char *name, const char *value )
         p->rc.psz_saliency_source = strdup(value);
         p->rc.i_saliency_mode = 1;
     }
+    OPT("saliency-s0")
+    {
+        int not_number = 0;
+        double dv = x264_atof(value, &not_number);
+        
+        if (!not_number)
+        {
+            b_error |= !(0 <= dv && dv <= 255);
+            if (!b_error) p->rc.f_salincy_base_level = dv;
+        }
+        else if ( strlen(value) >= 2 && value[strlen(value) -1] == '%' )
+        {
+            b_error |= !(0 <= dv && dv <= 100);
+            if (!b_error) p->rc.f_saliency_quantile = dv / 100;
+        }
+        else if ( strcmp(value, "mean") )
+        {
+            b_error = 1;
+        }
+    }
+    OPT("saliency-bitrate")
+    {
+        int not_number = 0;
+        double dv = x264_atof(value, &not_number);
+
+        if (!not_number)
+        {
+            b_error |= !(0 <= dv && dv <= 1);
+            if (!b_error) p->rc.f_saliency_bitrate_quantile = dv;
+        }
+        if (strlen(value) >= 2 && value[strlen(value) - 1] == '%')
+        {
+            b_error |= !(0 <= dv && dv <= 100);
+            if (!b_error) p->rc.f_saliency_bitrate_quantile = dv / 100;
+        }
+        else
+        {
+            b_error = 1;
+        }
+    }
+    OPT("saliency-kup")
+        p->rc.f_saliency_k_up = atof(value);
+    OPT("saliency-kdown")
+        p->rc.f_saliency_k_down = atof(value);
     OPT("saliency-fun")
 		p->rc.psz_saliency_dll_func = strdup(value);
 	OPT("dump-qp-raw")

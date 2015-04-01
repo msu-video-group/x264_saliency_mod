@@ -2620,6 +2620,51 @@ static ALWAYS_INLINE void x264_bitstream_restore( x264_t *h, x264_bs_bak_t *bak,
     }
 }
 
+static void x264_get_slice_raw_qp(x264_t * h)
+{
+    //TODO: consider mb.i_last_qp in AQ mode
+    int qp;
+    int i_skip;
+    int mb_xy, i_mb_x, i_mb_y;
+    i_mb_y = h->sh.i_first_mb / h->mb.i_mb_width;
+    i_mb_x = h->sh.i_first_mb % h->mb.i_mb_width;
+    i_skip = 0;
+
+    x264_saliency_img_t *img = h->fenc->p_img_qp_raw;
+    uint8_t *qp_plane = img->plane;
+    int qp_stride = img->i_stride;
+
+    assert( img->i_width == h->mb.i_mb_width && img->i_height == h->mb.i_mb_height );
+
+    while ( 1 )
+    {
+        mb_xy = i_mb_x + i_mb_y * h->mb.i_mb_width;
+
+        h->mb.i_mb_x = i_mb_x;
+        h->mb.i_mb_y = i_mb_y;
+        h->mb.i_mb_xy = i_mb_y * h->mb.i_mb_stride + i_mb_x;
+
+        qp = x264_ratecontrol_mb_qp( h );
+        qp_plane[i_mb_y*qp_stride + i_mb_x] = x264_clip3(qp, 0, 255);
+
+        if (mb_xy == h->sh.i_last_mb)
+            break;
+
+        if (SLICE_MBAFF)
+        {
+            i_mb_x += i_mb_y & 1;
+            i_mb_y ^= i_mb_x < h->mb.i_mb_width;
+        }
+        else
+            i_mb_x++;
+        if (i_mb_x == h->mb.i_mb_width)
+        {
+            i_mb_y++;
+            i_mb_x = 0;
+        }
+    }
+}
+
 static intptr_t x264_slice_write( x264_t *h )
 {
     int i_skip;
@@ -2679,6 +2724,12 @@ static intptr_t x264_slice_write( x264_t *h )
     i_mb_y = h->sh.i_first_mb / h->mb.i_mb_width;
     i_mb_x = h->sh.i_first_mb % h->mb.i_mb_width;
     i_skip = 0;
+
+    if ( h->param.rc.i_saliency_mode )
+    {
+        x264_get_slice_raw_qp( h );
+        x264_compute_saliency_stats( h );
+    }
 
     while( 1 )
     {
@@ -3244,22 +3295,22 @@ int     x264_encoder_encode( x264_t *h,
             else
                 fenc->p_img_saliency = malloc( sizeof(x264_saliency_img_t) );
 
-            saliency_img_copy( p_img_saliency, fenc->p_img_saliency );
-            saliency_img_compute_mean( fenc->p_img_saliency );
-            //x264_log( h, X264_LOG_INFO, "saliency mean = %f\n", fenc->p_img_saliency->f_mean );
+            if ( p_img_saliency->i_width != h->mb.i_mb_width || p_img_saliency->i_height != h->mb.i_mb_height )
+                x264_log(h, X264_LOG_ERROR, "saliency: unexpected behavior\n");
 
-			assert( p_img_saliency->i_width == h->mb.i_mb_width && p_img_saliency->i_height == h->mb.i_mb_height );
+            saliency_img_copy( p_img_saliency, fenc->p_img_saliency );
         }
 
-		if (h->param.psz_dump_qp_proc_dir)
+        if ( h->param.rc.i_saliency_mode || h->param.psz_dump_qp_raw_dir )
+        {
+            fenc->p_img_qp_raw = malloc( sizeof(x264_saliency_img_t) );
+            saliency_img_alloc( fenc->p_img_qp_raw, h->mb.i_mb_width, h->mb.i_mb_height );
+        }
+
+		if ( h->param.psz_dump_qp_proc_dir )
 		{
-			fenc->p_img_qp_proc = malloc(sizeof(x264_saliency_img_t));
-			saliency_img_alloc(fenc->p_img_qp_proc, h->mb.i_mb_width, h->mb.i_mb_height);
-		}
-		if ( h->param.psz_dump_qp_raw_dir )
-		{
-			fenc->p_img_qp_raw = malloc( sizeof(x264_saliency_img_t) );
-			saliency_img_alloc( fenc->p_img_qp_raw, h->mb.i_mb_width, h->mb.i_mb_height );
+			fenc->p_img_qp_proc = malloc( sizeof(x264_saliency_img_t) );
+			saliency_img_alloc( fenc->p_img_qp_proc, h->mb.i_mb_width, h->mb.i_mb_height );
 		}
 
         if( h->param.i_width != 16 * h->mb.i_mb_width ||

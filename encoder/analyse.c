@@ -3036,28 +3036,28 @@ void x264_macroblock_analyse( x264_t *h )
     int i_cost = COST_MAX;
 
     h->mb.i_qp = x264_ratecontrol_mb_qp( h );
+    
+    if (h->param.psz_dump_qp_raw_dir)
+    {
+        x264_saliency_img_t *img = h->fenc->p_img_qp_raw;
+        img->plane[h->mb.i_mb_y * img->i_stride + h->mb.i_mb_x] = x264_clip3(h->mb.i_qp, 0, 255);
+    }
+
+    if ( h->param.rc.i_saliency_mode )
+    {
+        x264_saliency_img_t *img_saliency = h->fenc->p_img_saliency;
+        double sm = img_saliency->plane[h->mb.i_mb_y * img_saliency->i_stride + h->mb.i_mb_x];
+        double sd = sm - h->sh.saliency_stat.base_level;
+        double k = (sd >= 0) ? h->sh.saliency_stat.k_up : h->sh.saliency_stat.k_down;
+
+        int new_qp = h->mb.i_qp - k * sd + 0.5;
+        h->mb.i_qp = x264_clip3(new_qp, h->param.rc.i_qp_min, h->param.rc.i_qp_max);
+    }
+
     /* If the QP of this MB is within 1 of the previous MB, code the same QP as the previous MB,
      * to lower the bit cost of the qp_delta.  Don't do this if QPRD is enabled. */
     if( h->param.rc.i_aq_mode && h->param.analyse.i_subpel_refine < 10 )
         h->mb.i_qp = abs(h->mb.i_qp - h->mb.i_last_qp) == 1 ? h->mb.i_last_qp : h->mb.i_qp;
-
-	if ( h->param.psz_dump_qp_raw_dir )
-	{
-		x264_saliency_img_t *img = h->fenc->p_img_qp_raw;
-		img->plane[h->mb.i_mb_y * img->i_stride + h->mb.i_mb_x] = x264_clip3( h->mb.i_qp, 0, 255 );
-	}
-    
-    if ( h->param.rc.i_saliency_mode && h->fenc->p_img_saliency )
-    {
-        x264_saliency_img_t *img_saliency = h->fenc->p_img_saliency;
-        uint8_t *plane_saliency = img_saliency->plane;
-        int saliency_val = plane_saliency[h->mb.i_mb_y * img_saliency->i_stride + h->mb.i_mb_x];
-        
-        int new_qp = h->mb.i_qp - ( 50.0f / 255.0f ) * ( (float)saliency_val - img_saliency->f_mean );
-        h->mb.i_qp = x264_clip3( new_qp, h->param.rc.i_qp_min, h->param.rc.i_qp_max );
-        
-        //h->mb.i_qp = h->param.rc.i_qp_min + saliency_val * ( h->param.rc.i_qp_max - h->param.rc.i_qp_min ) / 255;
-    }
 
 	if ( h->param.psz_dump_qp_proc_dir )
 	{

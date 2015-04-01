@@ -430,6 +430,14 @@ typedef struct
     int i_alpha_c0_offset;
     int i_beta_offset;
 
+    /* params for saliency-aware MB coding */
+    struct
+    {
+        double base_level;
+        double k_up;
+        double k_down;
+    } saliency_stat;
+
 } x264_slice_header_t;
 
 typedef struct x264_lookahead_t

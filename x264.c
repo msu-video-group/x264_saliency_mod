@@ -933,6 +933,13 @@ static void help( x264_param_t *defaults, int longhelp )
     x264_register_vid_filters();
     x264_vid_filter_help( longhelp );
     H0( "\n" );
+    H1( "Saliency-based compression:\n" );
+    H1( "      --saliency <string>     Specify filename to video with saliency\n");
+    H1( "      --saliency-s0 <integer>% Specify base level of saliency (quantile)\n"
+        "                    <integer>  Specify base level of saliency (absolute value)\n"
+        "                    mean       Specify base level of saliency (it will be mean)\n" );
+    H1( "      --saliency-bitrate <integer>% \n"
+        "                               Specify percent of bitrate which will be used for salient zones\n" );
 }
 
 typedef enum
@@ -1136,10 +1143,14 @@ static struct option long_options[] =
     { "input-range", required_argument, NULL, OPT_INPUT_RANGE },
     { "stitchable",        no_argument, NULL, 0 },
     { "filler",            no_argument, NULL, 0 },
-    { "saliency",    required_argument, NULL, 0 },
-    { "saliency-fun",required_argument, NULL, 0 }, //unused
-	{ "dump-qp-raw", required_argument, NULL, 0 },
-	{ "dump-qp-proc",required_argument, NULL, 0 },
+    { "saliency",       required_argument, NULL, 0 },
+    { "saliency-s0",        required_argument, NULL, 0 },
+    { "saliency-bitrate",   required_argument, NULL, 0 },
+    { "saliency-kup",       required_argument, NULL, 0 },
+    { "saliency-kdown",     required_argument, NULL, 0 },
+    { "saliency-fun",       required_argument, NULL, 0 }, //unused
+	{ "dump-qp-raw",        required_argument, NULL, 0 },
+	{ "dump-qp-proc",       required_argument, NULL, 0 },
     {0, 0, 0, 0}
 };
 
@@ -1410,7 +1421,7 @@ static int parse_enum_value( const char *arg, const char * const *names, int *ds
 
 static int libav_saliency_writer( x264_saliency_img_t *img, const char *path )
 {
-#ifdef HAVE_LAVF
+#if HAVE_LAVF
     int got_packet;
     FILE *fp = NULL;
     AVCodec *codec = NULL;
@@ -1443,10 +1454,8 @@ static int libav_saliency_writer( x264_saliency_img_t *img, const char *path )
     frame->height = ctx->height;
     frame->width = ctx->width;
     frame->format = ctx->pix_fmt;
-
-    //TODO: maybe fix this
-    if ( avpicture_fill((AVPicture*) frame, img->plane, frame->format, frame->width, frame->height) < 0 )
-        goto fail;
+    frame->data[0] = img->plane;
+    frame->linesize[0] = img->i_stride;
 
     got_packet = 0;
     while ( 1 )
@@ -1481,8 +1490,34 @@ fail:
     }
     if ( frame )
         av_frame_free( &frame );
+    return -1;
+#else    
+    char *path_csv = (char *) malloc( strlen(path) + 5 );
+    FILE *fp;
+    strcpy(path_csv, path);
+    strcat(path_csv, ".csv");
+
+    fp = fopen(path_csv, "w");
+    if ( !fp )
+        return -1;
+    
+    uint8_t *data = img->plane;
+    int i, j;
+
+    for (i = 0; i < img->i_height; i++)
+    {
+        for (j = 0; j < img->i_width-1; j++)
+            fprintf(fp, "%d,", (int)data[j]);
+        fprintf(fp, "%d\n", (int)data[j]);
+
+        data += img->i_stride;
+    }
+
+    fclose(fp);
+    free(path_csv);
+
+    return 0;
 #endif
-    return 1;
 }
 
 static int parse( int argc, char **argv, x264_param_t *param, cli_opt_t *opt )
@@ -1769,12 +1804,16 @@ generic_option:
         FAIL_IF_ERROR( !opt->hin_saliency && saliency_input.open_file(param->rc.psz_saliency_source, &opt->hin_saliency, &vi_saliency, &opt_saliency),
                        saliency_open_error);
 
-        if (param->psz_dump_qp_proc_dir || param->psz_dump_qp_raw_dir)
+        if ( param->rc.f_saliency_bitrate_quantile < 0 && param->rc.f_saliency_k_down < 0 && param->rc.f_saliency_k_up < 0)
         {
-            saliency_img_writer = libav_saliency_writer;
+            param->rc.f_saliency_k_down = param->rc.f_saliency_k_up = 50.0 / 255;
         }
     }
 
+    if (param->psz_dump_qp_proc_dir || param->psz_dump_qp_raw_dir)
+    {
+        saliency_img_writer = libav_saliency_writer;
+    }
     x264_reduce_fraction( &info.sar_width, &info.sar_height );
     x264_reduce_fraction( &info.fps_num, &info.fps_den );
     x264_cli_log( demuxername, X264_LOG_INFO, "%dx%d%c %u:%u @ %u/%u fps (%cfr)\n", info.width,
@@ -2106,6 +2145,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
                 return -1;
 
             convert_cli_pic_to_saliency_img( &cli_pic_saliency, &img_saliency );
+
+            saliency_img_writer( &img_saliency, "saliency.png" );
         }
 
         if( !param->b_vfr_input )
