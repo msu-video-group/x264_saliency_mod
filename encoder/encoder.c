@@ -3298,7 +3298,7 @@ int     x264_encoder_encode( x264_t *h,
             if ( p_img_saliency->i_width != h->mb.i_mb_width || p_img_saliency->i_height != h->mb.i_mb_height )
                 x264_log(h, X264_LOG_ERROR, "saliency: unexpected behavior\n");
 
-            saliency_img_copy( p_img_saliency, fenc->p_img_saliency );
+            saliency_img_copy( p_img_saliency, fenc->p_img_saliency, p_img_saliency->i_width );
         }
 
         if ( h->param.rc.i_saliency_mode || h->param.psz_dump_qp_raw_dir )

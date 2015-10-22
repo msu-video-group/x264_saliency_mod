@@ -2146,7 +2146,15 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
             convert_cli_pic_to_saliency_img( &cli_pic_saliency, &img_saliency );
 
-            saliency_img_writer( &img_saliency, "saliency.png" );
+            if ( i_frame + opt->i_seek == 0 )
+            {
+                int min_val = saliency_img_get_min(&img_saliency);
+                if ( min_val > 0 )
+                {
+                    x264_log( h, X264_LOG_WARNING, "Strange saliency range. min=%d\n", min_val );
+                    libav_saliency_writer( &img_saliency, "x264_saliency_test.png" );
+                }
+            }
         }
 
         if( !param->b_vfr_input )

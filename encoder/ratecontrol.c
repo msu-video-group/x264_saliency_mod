@@ -33,6 +33,7 @@
 #include "common/common.h"
 #include "ratecontrol.h"
 #include "me.h"
+#include <float.h>
 
 typedef struct
 {
@@ -3085,7 +3086,7 @@ static double x264_solve_polynomial_eq(double *coefs, int maxdeg, double left, d
     if (valr <= 0)
         return right;
 
-    while (right - left >= eps)
+    while ( right - left >= eps )
     {
         middle = (left + right) * 0.5;
         valm = x264_compute_polynomial(coefs, maxdeg, middle);
@@ -3105,137 +3106,168 @@ static double x264_solve_polynomial_eq(double *coefs, int maxdeg, double left, d
     return left + (-vall) / (valr - vall) * (right - left);
 }
 
-static double saliency_compute_cost( x264_saliency_img_t *img_sm, x264_saliency_img_t *img_qp, int dir, double exp0, double s0, double kup, double kdown, int h0, int h1 )
+typedef struct
 {
-    uint8_t *sm_data = img_sm->plane + h0 * img_sm->i_stride;
-    uint8_t *qp_data = img_qp->plane + h0 * img_qp->i_stride;
+    double dn;
+    double md;
+    double up;
+} x264_saliency_cost;
 
-    double sd, qp, cost = 0;
-    int i, j;
+typedef struct
+{
+    x264_saliency_img_t *img_sm;
+    x264_saliency_img_t *img_qp;
+    double exp0;
+    double s0; 
+    double k_up, k_dn;
+} x264_saliency_cost_params;
 
-    for ( i = h0; i <= h1; i++ )
+static void saliency_compute_cost( const x264_saliency_cost_params *p, int mb1, int mb2, x264_saliency_cost *cost)
+{
+    uint8_t *sm_data = p->img_sm->plane + mb1 * p->img_sm->i_stride;
+    uint8_t *qp_data = p->img_qp->plane + mb1 * p->img_qp->i_stride;
+
+    cost->dn = cost->md = cost->up = 0;
+
+    double sd, qp;
+    int j;
+
+    for ( j = mb1; j <= mb2; j++ )
     {
-        for ( j = 0; j < img_sm->i_width; j++)
-        {
-            qp = qp_data[j];
-            sd = (double)sm_data[j] - s0;
+        qp = qp_data[j];
+        sd = (double)sm_data[j] - p->s0;
 
-            if (dir <= 0 && sd < 0)
-                cost += pow(exp0, -qp + sd * kdown );
-
-            if (dir >= 0 && sd >= 0)
-                cost += pow(exp0, -qp + sd * kup );
-        }
-
-        sm_data += img_sm->i_stride;
-        qp_data += img_qp->i_stride;
+        if (sd < 0)
+            cost->dn += pow(p->exp0, -qp + sd * p->k_dn);
+        else if (sd > 0)
+            cost->up += pow(p->exp0, -qp + sd * p->k_up);
+        else
+            cost->md += pow(p->exp0, -qp);
     }
-
-    return cost;
 }
 
-static double saliency_compute_k_dir( x264_saliency_img_t *img_sm, x264_saliency_img_t *img_qp, int dir, double exp0, int s0, double ref_cost, int h0, int h1 )
+static double saliency_compute_k_dir( x264_t *h, x264_saliency_cost_params *p, int dir, double cost_cur, double cost_req, int mb1, int mb2 )
 {
-    uint8_t *sm_data = img_sm->plane + h0 * img_sm->i_stride;
-    uint8_t *qp_data = img_qp->plane + h0 * img_qp->i_stride;
+    if (cost_cur < FLT_EPSILON)
+        return 0;
 
-    int qp, sm, sd, i, j;
+    int dir_cost = (cost_cur <= cost_req) ? 1 : -1;
+    int k_sign = dir_cost * dir;
+
+    int qp, sm, sd, j;
+
+    uint8_t *sm_data = p->img_sm->plane + mb1 * p->img_sm->i_stride;
+    uint8_t *qp_data = p->img_qp->plane + mb1 * p->img_qp->i_stride;
 
     double coefs[256];
-    double k_dir;
     memset(coefs, 0, 256 * sizeof(double));
+    coefs[0] = -cost_req;
 
-    for (i = h0; i <= h1; i++)
+    for ( j = mb1; j <= mb2; j++ )
     {
-        for (j = 0; j < img_sm->i_width; j++)
-        {
-            qp = qp_data[j];
-            sm = sm_data[j];
-            sd = sm - s0;
+        qp = qp_data[j];
+        sm = sm_data[j];
+        sd = sm - p->s0;
 
-            if (dir >= 0 && sd >= 0)
-                coefs[sd] += pow(exp0, -qp);
-            
-            if (dir < 0 && sd < 0)
-                coefs[-sd] += pow(exp0, -qp);
-        }
-
-        sm_data += img_sm->i_stride;
-        qp_data += img_qp->i_stride;
+        if (dir > 0 && sd > 0 || dir < 0 && sd < 0)
+            coefs[abs(sd)] += pow(p->exp0, -qp);
     }
 
-    coefs[0] -= ref_cost;
+    int maxdeg = (dir < 0) ? p->s0 : 255 - p->s0;
+    double root_min = (dir_cost < 0) ? pow(p->exp0, -QP_MAX) : 1;
+    double root_max = (dir_cost < 0) ? 1 : pow(p->exp0, QP_MAX);
+    double root_eps = (dir_cost < 0) ? 1e-9 : 1e-4;
 
-    if ( dir < 0 )
-    {
-        k_dir = x264_solve_polynomial_eq(coefs, s0, pow(exp0, -QP_MAX), 1, 1e-9);
-        k_dir = -log(k_dir) / log(exp0);
-    }
-    else
-    {
-        k_dir = x264_solve_polynomial_eq(coefs, 255 - s0, 0, QP_MAX, 1e-4);
-        k_dir = log(k_dir) / log(exp0);
-    }
+    double x = x264_solve_polynomial_eq(coefs, maxdeg, root_min, root_max, root_eps);
+    double k = k_sign * fabs( log(x) / log(p->exp0) );
 
-    return k_dir;
+    //double cost_get = saliency_compute_cost(img_sm, img_qp, dir, exp0, s0, k, k, h0, h1);
+    //x264_log(h, X264_LOG_WARNING, "root: %lf; fn=%lf\n", x, x264_compute_polynomial(coefs, maxdeg, x));
+    //x264_log(h, X264_LOG_WARNING, "dir: %d; dir_cost: %d (cost_cur: %lf; cost_exp: %lf); cost_get: %lf; k: %lf; k_sign: %d\n", dir, dir_cost, cost_cur, cost_req, cost_get, k, k_sign);
+
+    return k;
 }
 
-void x264_saliency_compute_actual_scales( x264_t *h, int s0 )
+void x264_saliency_compute_actual_scales( x264_t *h, double f_s0 )
 {
     x264_saliency_img_t *img_sm = h->fenc->p_img_saliency;
     x264_saliency_img_t *img_qp = h->fenc->p_img_qp_raw;
 
-    int height = h->mb.i_mb_height;
-    int width = h->mb.i_mb_width;
-    int h0 = h->sh.i_first_mb / h->mb.i_mb_width;
-    int h1 = h->sh.i_last_mb / h->mb.i_mb_width;
+    int mb1 = h->sh.i_first_mb;
+    int mb2 = h->sh.i_last_mb;
     
-    if ( !(h0 < h1 && h0 >= 0 && h1 < height) ||
-         (width != img_sm->i_width || height != img_sm->i_height) ||
-         (width != img_qp->i_width || height != img_qp->i_height)
-        )
+    if (h->mb.i_mb_width != img_sm->i_width || h->mb.i_mb_width != img_sm->i_stride ||
+        h->mb.i_mb_width != img_qp->i_width || h->mb.i_mb_width != img_qp->i_stride ||
+        mb2 > img_sm->i_height * img_sm->i_stride)
     {
-        x264_log(h, X264_LOG_ERROR, "error in x264_saliency_get_actual_scales");
+        x264_log(h, X264_LOG_ERROR, "x264_saliency_get_actual_scales: internal error");
     }
 
-    double exp6 = pow(2.0, 1.0 / 6.0);
-    double cost0, cost_new;
-    double kup = 0, kdown = 0;
+    int s0 = (int)f_s0;
+    double s0_frac, s0_int;
+    s0_frac = modf(f_s0, &s0_int);
+
+    x264_saliency_cost_params cp;
+    cp.img_sm = img_sm;
+    cp.img_qp = img_qp;
+    cp.s0 = s0;
+    cp.exp0 = pow(2.24, 1.0 / 6.0); //experimentally derived number
+    cp.k_up = cp.k_dn = 0;
+    
+    x264_saliency_cost cost, cost_get;
+    saliency_compute_cost(&cp, mb1, mb2, &cost);
+    double cost_all = cost.dn + cost.md + cost.up;
+
     double sbq = h->param.rc.f_saliency_bitrate_quantile;
-    
-    cost0 = saliency_compute_cost(img_sm, img_qp, 0, exp6, s0, kup, kdown, h0, h1);
-    
     if (sbq >= 0)
     {
-        kup     = saliency_compute_k_dir(img_sm, img_qp, +1, exp6, s0, sbq * cost0, h0, h1);
-        kdown   = saliency_compute_k_dir(img_sm, img_qp, -1, exp6, s0, (1 - sbq) * cost0, h0, h1);
+        //double cost_ratio_up = cost_all * sbq       / (cost.up + (1 - s0_frac) * cost.md);
+        //double cost_ratio_dn = cost_all * (1 - sbq) / (cost.dn + s0_frac       * cost.md);
+        //x264_log(h, X264_LOG_WARNING, "cost_ratio_up: %lf; cost_ratio_dn: %lf\n", cost_ratio_up, cost_ratio_dn);
+
+        //double cost_req_up = cost_all * sbq       - (1 - s0_frac) * cost.md;
+        //double cost_req_dn = cost_all * (1 - sbq) - s0_frac       * cost.md;
+        //x264_log(h, X264_LOG_WARNING, "cost_req_up: %lf; cost_req_dn: %lf\n", cost_req_up, cost_req_dn);
+
+        if (cost.dn > 0 && cost.up > 0)
+        {
+            double cost_up_req = sbq * (cost.dn + cost.up);
+            cp.k_up = saliency_compute_k_dir(h, &cp, +1, cost.up, cost_up_req, mb1, mb2);
+        
+            double cost_dn_req = (1 - sbq) * (cost.dn + cost.up);
+            cp.k_dn = saliency_compute_k_dir(h, &cp, -1, cost.dn, cost_dn_req, mb1, mb2);
+        }
     }
     else
     {
-        double cost_half;
-        kup = h->param.rc.f_saliency_k_up;
-        kdown = h->param.rc.f_saliency_k_down;
-
-        if (kup >= 0)
+        if (h->param.rc.f_saliency_k_up >= 0)
         {
-            cost_half = saliency_compute_cost(img_sm, img_qp, +1, exp6, s0, kup, 0, h0, h1);
-            kdown = saliency_compute_k_dir(img_sm, img_qp, -1, exp6, s0, cost0 - cost_half, h0, h1);
+            cp.k_up = h->param.rc.f_saliency_k_up;
+            saliency_compute_cost(&cp, mb1, mb2, &cost_get);
+            cp.k_dn = saliency_compute_k_dir(h, &cp, -1, cost.dn, cost.dn + cost.up - cost_get.up, mb1, mb2);
         }
         else
         {
-            cost_half = saliency_compute_cost(img_sm, img_qp, -1, exp6, s0, 0, kdown, h0, h1);
-            kup = saliency_compute_k_dir(img_sm, img_qp, +1, exp6, s0, cost0 - cost_half, h0, h1);
+            cp.k_dn = h->param.rc.f_saliency_k_down;
+            saliency_compute_cost(&cp, mb1, mb2, &cost_get);
+            cp.k_up = saliency_compute_k_dir(h, &cp, +1, cost.up, cost.dn + cost.up - cost_get.dn, mb1, mb2);
         }
     }
 
-    cost_new = saliency_compute_cost(img_sm, img_qp, 0, exp6, s0, kup, kdown, h0, h1);
+    saliency_compute_cost(&cp, mb1, mb2, &cost_get);
+    double cost_all_get = cost_get.dn + cost_get.md + cost_get.up;
+    double rerror = cost_all / cost_all_get - 1.0;
+    if ( fabs(rerror) > 0.01 )
+    {
+        int verbosity = X264_LOG_WARNING;
+        x264_log(h, verbosity, "saliency ratecontrol error: %.2lf%%\n", rerror * 100);
+        x264_log(h, verbosity, "s0: %lf; k_up: %.3lf; k_dn: %.3lf\n", f_s0, cp.k_up, cp.k_dn);
+        x264_log(h, verbosity, "cost_old: %.1lf; cost_new: %.1lf\n", cost_all, cost_all_get);
+    }
 
-    x264_log(h, X264_LOG_INFO, "saliency ratecontrol:\n");
-    x264_log(h, X264_LOG_INFO, "s0: %d; kup: %.3lf; kdown: %.3lf\n", s0, kup, kdown);
-    x264_log(h, X264_LOG_INFO, "c_old: %.1lf; c_new: %.1lf; c_ratio=%.1lf\n", cost0, cost_new, cost_new / cost0);
-
-    h->sh.saliency_stat.k_down = kdown;
-    h->sh.saliency_stat.k_up = kup;
+    h->sh.saliency_stat.base_level = cp.s0;
+    h->sh.saliency_stat.k_down = cp.k_dn;
+    h->sh.saliency_stat.k_up = cp.k_up;
 }
 
 void x264_compute_saliency_stats( x264_t *h )
@@ -3256,6 +3288,8 @@ void x264_compute_saliency_stats( x264_t *h )
         s0 = saliency_img_compute_mean( h->fenc->p_img_saliency );
     }
 
+    x264_log(h, X264_LOG_WARNING, "#%5d Saliency base: %.2lf\n", h->fenc->i_frame, s0);
+
     h->sh.saliency_stat.base_level = s0;
 
     if ( h->param.rc.f_saliency_k_down >= 0 && h->param.rc.f_saliency_k_up >= 0 )
@@ -3265,6 +3299,6 @@ void x264_compute_saliency_stats( x264_t *h )
     }
     else
     {
-        x264_saliency_compute_actual_scales( h, (int)(s0 + 0.5) );
+        x264_saliency_compute_actual_scales( h, s0 );
     }
 }

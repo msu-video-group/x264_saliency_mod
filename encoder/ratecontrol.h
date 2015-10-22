@@ -66,6 +66,6 @@ void x264_threads_merge_ratecontrol( x264_t *h );
 void x264_hrd_fullness( x264_t *h );
 
 void x264_compute_saliency_stats( x264_t *h );
-void x264_saliency_compute_actual_scales( x264_t *h, int s0 );
+void x264_saliency_compute_actual_scales( x264_t *h, double s0 );
 #endif
 
