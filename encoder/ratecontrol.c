@@ -3057,15 +3057,24 @@ fail:
     return -1;
 }
 
-static double x264_compute_polynomial(double *coefs, int maxdeg, double x)
+typedef struct
+{
+    double free_coef;
+    double coefs[256];
+    int maxdeg;
+
+    double pow0;
+} x264_saliency_poly;
+
+static double x264_saliency_poly_compute( x264_saliency_poly *p, double x )
 {
     int i;
-    double res = 0;
-    double xn = 1;
+    double res = p->free_coef;
+    double xn = pow(x, p->pow0);
 
-    for (i = 0; i <= maxdeg; i++)
+    for (i = 0; i <= p->maxdeg; i++)
     {
-        res += coefs[i] * xn;
+        res += p->coefs[i] * xn;
         xn *= x;
     }
 
@@ -3073,13 +3082,13 @@ static double x264_compute_polynomial(double *coefs, int maxdeg, double x)
 }
 
 // poly must be strictly increasing function on [left; right]
-static double x264_solve_polynomial_eq(double *coefs, int maxdeg, double left, double right, double eps)
+static double x264_saliency_poly_solve_eq( x264_saliency_poly *p, double left, double right, double eps )
 {
     double vall, valm, valr;
     double middle;
 
-    vall = x264_compute_polynomial(coefs, maxdeg, left);
-    valr = x264_compute_polynomial(coefs, maxdeg, right);
+    vall = x264_saliency_poly_compute(p, left);
+    valr = x264_saliency_poly_compute(p, right);
 
     if (vall >= 0)
         return left;
@@ -3089,7 +3098,7 @@ static double x264_solve_polynomial_eq(double *coefs, int maxdeg, double left, d
     while ( right - left >= eps )
     {
         middle = (left + right) * 0.5;
-        valm = x264_compute_polynomial(coefs, maxdeg, middle);
+        valm = x264_saliency_poly_compute(p, middle);
 
         if (valm <= 0)
         {
@@ -3122,7 +3131,7 @@ typedef struct
     double k_up, k_dn;
 } x264_saliency_cost_params;
 
-static void saliency_compute_cost( const x264_saliency_cost_params *p, int mb1, int mb2, x264_saliency_cost *cost)
+static void saliency_compute_cost( const x264_saliency_cost_params *p, int mb1, int mb2, x264_saliency_cost *cost )
 {
     uint8_t *sm_data = p->img_sm->plane + mb1 * p->img_sm->i_stride;
     uint8_t *qp_data = p->img_qp->plane + mb1 * p->img_qp->i_stride;
@@ -3159,31 +3168,32 @@ static double saliency_compute_k_dir( x264_t *h, x264_saliency_cost_params *p, i
     uint8_t *sm_data = p->img_sm->plane + mb1 * p->img_sm->i_stride;
     uint8_t *qp_data = p->img_qp->plane + mb1 * p->img_qp->i_stride;
 
-    double coefs[256];
-    memset(coefs, 0, 256 * sizeof(double));
-    coefs[0] = -cost_req;
+    x264_saliency_poly poly;
+    memset(&poly, 0, sizeof(poly));
+    poly.free_coef = -cost_req;
+
+    int s0 = (int)p->s0 + ((dir > 0) ? 1 : 0);
+    poly.pow0 = fabs(p->s0 - s0);
 
     for ( j = mb1; j <= mb2; j++ )
     {
         qp = qp_data[j];
         sm = sm_data[j];
-        sd = sm - p->s0;
+        sd = sm - s0;
 
         if (dir > 0 && sd > 0 || dir < 0 && sd < 0)
-            coefs[abs(sd)] += pow(p->exp0, -qp);
+            poly.coefs[abs(sd)] += pow(p->exp0, -qp);
     }
 
-    int maxdeg = (dir < 0) ? p->s0 : 255 - p->s0;
+    poly.maxdeg = (dir < 0) ? s0 : 256 - s0;
     double root_min = (dir_cost < 0) ? pow(p->exp0, -QP_MAX) : 1;
     double root_max = (dir_cost < 0) ? 1 : pow(p->exp0, QP_MAX);
-    double root_eps = (dir_cost < 0) ? 1e-9 : 1e-4;
+    double root_eps = (dir_cost < 0) ? 1e-9 : 1e-5;
 
-    double x = x264_solve_polynomial_eq(coefs, maxdeg, root_min, root_max, root_eps);
+    double x = x264_saliency_poly_solve_eq(&poly, root_min, root_max, root_eps);
     double k = k_sign * fabs( log(x) / log(p->exp0) );
 
-    //double cost_get = saliency_compute_cost(img_sm, img_qp, dir, exp0, s0, k, k, h0, h1);
-    //x264_log(h, X264_LOG_WARNING, "root: %lf; fn=%lf\n", x, x264_compute_polynomial(coefs, maxdeg, x));
-    //x264_log(h, X264_LOG_WARNING, "dir: %d; dir_cost: %d (cost_cur: %lf; cost_exp: %lf); cost_get: %lf; k: %lf; k_sign: %d\n", dir, dir_cost, cost_cur, cost_req, cost_get, k, k_sign);
+    //x264_log(h, X264_LOG_WARNING, "root: %lf; fn=%lf\n", x, x264_saliency_poly_compute(&poly, x));
 
     return k;
 }
@@ -3203,14 +3213,10 @@ void x264_saliency_compute_actual_scales( x264_t *h, double f_s0 )
         x264_log(h, X264_LOG_ERROR, "x264_saliency_get_actual_scales: internal error");
     }
 
-    int s0 = (int)f_s0;
-    double s0_frac, s0_int;
-    s0_frac = modf(f_s0, &s0_int);
-
     x264_saliency_cost_params cp;
     cp.img_sm = img_sm;
     cp.img_qp = img_qp;
-    cp.s0 = s0;
+    cp.s0 = f_s0;
     cp.exp0 = pow(2.24, 1.0 / 6.0); //experimentally derived number
     cp.k_up = cp.k_dn = 0;
     
@@ -3221,14 +3227,6 @@ void x264_saliency_compute_actual_scales( x264_t *h, double f_s0 )
     double sbq = h->param.rc.f_saliency_bitrate_quantile;
     if (sbq >= 0)
     {
-        //double cost_ratio_up = cost_all * sbq       / (cost.up + (1 - s0_frac) * cost.md);
-        //double cost_ratio_dn = cost_all * (1 - sbq) / (cost.dn + s0_frac       * cost.md);
-        //x264_log(h, X264_LOG_WARNING, "cost_ratio_up: %lf; cost_ratio_dn: %lf\n", cost_ratio_up, cost_ratio_dn);
-
-        //double cost_req_up = cost_all * sbq       - (1 - s0_frac) * cost.md;
-        //double cost_req_dn = cost_all * (1 - sbq) - s0_frac       * cost.md;
-        //x264_log(h, X264_LOG_WARNING, "cost_req_up: %lf; cost_req_dn: %lf\n", cost_req_up, cost_req_dn);
-
         if (cost.dn > 0 && cost.up > 0)
         {
             double cost_up_req = sbq * (cost.dn + cost.up);
