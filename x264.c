@@ -933,13 +933,31 @@ static void help( x264_param_t *defaults, int longhelp )
     x264_register_vid_filters();
     x264_vid_filter_help( longhelp );
     H0( "\n" );
-    H1( "Saliency-based compression:\n" );
-    H1( "      --saliency <string>     Specify filename to video with saliency\n");
-    H1( "      --saliency-s0 <integer>% Specify base level of saliency (quantile)\n"
-        "                    <integer>  Specify base level of saliency (absolute value)\n"
-        "                    mean       Specify base level of saliency (it will be mean)\n" );
-    H1( "      --saliency-bitrate <integer>% \n"
-        "                               Specify percent of bitrate which will be used for salient zones\n" );
+    H0( "Saliency-aware compression:\n" );
+    H0( "      --saliency <string>     Specify filename of a video with saliency\n\n");
+    H0( "      --saliency-s0 <integer> Specify base saliency value in absolute form (in [0; 255] range).\n"
+        "\n"
+        "      Notes about saliency-s0 parameter:\n"
+        "      Base saliency value divides frame pixels on to least and most salient areas.\n"
+        "      The quality of the most salient areas will be increased, and least salient is decreasing.\n"
+        "      The most salient pixels are pixels which saliency is greater than saliency-s0.\n"
+        "      The least salient pixels are pixels which saliency is less than saliency-s0.\n"
+        "      This parameter in percentile form (see below) corresponds to p%% parameter in\n"
+        "      the original article \"A semiautomatic saliency model and its application to video\n"
+        "      compression\", chapter V.\n"
+        "\n"
+        "      --saliency-s0 <integer>%% Specify base level of saliency in percentile form,\n"
+        "                               so actual absolute value will be computed automatically\n"
+        "                               for each frame.\n"
+        "      --saliency-s0 mean       Specify base level of saliency, these notation means that\n"
+        "                               an average saliency of a frame will be used as a base\n"
+        "                               saliency value\n" );
+    H0( "      --saliency-bitrate <integer>%% Specify percent of bitrate which will be allocated\n"
+        "                                    for most salient areas, so 100%% - saliency-bitrate\n"
+        "                                    percent of each frame bitrate will be used for least\n"
+        "                                    salient areas.\n"
+        "                                    100%% - saliency-bitrate is equal to b%% parameter in\n"
+        "                                    the original article.");
 }
 
 typedef enum
@@ -1355,7 +1373,7 @@ static int init_vid_saliency_filters( char *sequence, hnd_t *handle, video_info_
     int dst_h = (main_param->i_height + 15) / 16;
     int b_resize_required = (dst_w != info->width || dst_h != info->height);
     int b_have_full_size = (info->width == main_param->i_width && info->height == main_param->i_height);
-    
+
     FAIL_IF_ERROR( b_resize_required && !b_have_full_size, "saliency have incorrect size" );
 
     /* force saliency param be equal to main_param except width, height and csp */
@@ -1431,7 +1449,7 @@ static int libav_saliency_writer( x264_saliency_img_t *img, const char *path )
 
     avcodec_register_all();
     av_log_set_level(AV_LOG_INFO);
-        
+
     if ( !( fp = fopen(path, "wb") ) )
         goto fail;
 
@@ -1440,7 +1458,7 @@ static int libav_saliency_writer( x264_saliency_img_t *img, const char *path )
 
     if ( !( ctx = avcodec_alloc_context3(codec) ) )
         goto fail;
-    
+
     ctx->height = img->i_height;
     ctx->width = img->i_width;
     ctx->pix_fmt = AV_PIX_FMT_GRAY8;
@@ -1491,7 +1509,7 @@ fail:
     if ( frame )
         av_frame_free( &frame );
     return -1;
-#else    
+#else
     char *path_csv = (char *) malloc( strlen(path) + 5 );
     FILE *fp;
     strcpy(path_csv, path);
@@ -1500,7 +1518,7 @@ fail:
     fp = fopen(path_csv, "w");
     if ( !fp )
         return -1;
-    
+
     uint8_t *data = img->plane;
     int i, j;
 
@@ -2127,7 +2145,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
     if( opt->tcfile_out )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
-    
+
     cli_pic_t cli_pic_saliency;
     x264_saliency_img_t img_saliency;
 
