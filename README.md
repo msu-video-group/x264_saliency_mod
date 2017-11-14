@@ -6,11 +6,11 @@ You could download a build for Windows [here](https://github.com/msu-video-group
 
 Then you could compress videos taking into account their visual attention distribution as follows:
 
-``` bash
+```bash
 x264.exe "source.avi" --output "source-saliency-aware.mkv" --bitrate 1000 --saliency "saliency.avi" --saliency-s0 75% --saliency-bitrate 40%
 ```
 
-The first three parameters as the same as in ordinary x264 encoder:
+The first three parameters are the same as in ordinary x264 encoder:
 * `"source.avi"` is a path of source video;
 * `--output` specifies a path of the compressed video;
 * `--bitrate` specifies the average bitrate of the compressed video.
