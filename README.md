@@ -1,6 +1,12 @@
 # x264_saliency_mod
 A fork of x264 video encoder supporting custom saliency maps as an additional input to improve quality of salient objects.
 
+An example (click to see the full-size images):
+
+| Ordinary x264 | Saliency-aware x264 |
+|---------------|---------------------|
+| [![Ordinary x264](http://compression.ru/video/savam/images/github/0003_015651_x264_crop.jpg)](http://compression.ru/video/savam/images/github/0003_015651_x264.png) | [![Saliency-aware x264](http://compression.ru/video/savam/images/github/0003_015651_proposed_crop.jpg)](http://compression.ru/video/savam/images/github/0003_015651_proposed.png) |
+
 # Getting started
 You could download a build for Windows [here](https://github.com/msu-video-group/x264_saliency_mod/releases) or build it on your own.
 
