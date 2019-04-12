@@ -8,7 +8,8 @@ An example (click to see the full-size images):
 | [![Ordinary x264](http://compression.ru/video/savam/images/github/0003_015651_x264_crop.jpg)](http://compression.ru/video/savam/images/github/0003_015651_x264.png) | [![Saliency-aware x264](http://compression.ru/video/savam/images/github/0003_015651_proposed_crop.jpg)](http://compression.ru/video/savam/images/github/0003_015651_proposed.png) |
 
 # Getting started
-You could download a build [here](https://github.com/msu-video-group/x264_saliency_mod/releases). The archive contains an executable for Windows, if you a Linux user, check `example.sh` scirpt in the archive to run the codec through `wine`.
+You could download a build [here](https://github.com/msu-video-group/x264_saliency_mod/releases). 
+The archive contains an executable for Windows, if you are a Linux user, check `example.sh` scirpt in the archive to run the codec through `wine`.
 
 Then you could compress videos taking into account their visual attention distribution as follows:
 
@@ -21,8 +22,8 @@ wine x264.exe "source.avi" --output "source-saliency-aware.mkv" --bitrate 1000 -
 ```
 
 The first three parameters are the same as in ordinary x264 encoder:
-* `"source.avi"` is a path of source video;
-* `--output` specifies a path of the compressed video;
+* `"source.avi"` is a path to source video;
+* `--output` specifies a path to the compressed video;
 * `--bitrate` specifies the average bitrate of the compressed video.
 
 The following three parameters are the most interesting, they are responsible for saliency-aware compression:
